@@ -59,6 +59,36 @@ function getRepoDirectory() {
     return $dir;
 }
 
+function getGitEnvironment() {
+    static $env = null;
+    if ($env !== null) return $env;
+    
+    $userProfile = getenv('USERPROFILE');
+    if (!$userProfile || !file_exists($userProfile)) {
+        $users = glob('C:\\Users\\*', GLOB_ONLYDIR);
+        foreach ($users as $u) {
+            if (!in_array(basename($u), ['Public', 'Default', 'All Users', 'Default User']) && file_exists($u . '/.gitconfig')) {
+                $userProfile = $u;
+                break;
+            }
+        }
+    }
+    $userProfile = $userProfile ?: 'C:\\Users\\CESAR';
+    
+    $env = [
+        'PATH' => getenv('PATH') . ';C:\\Program Files\\Git\\cmd;C:\\Program Files\\Git\\bin',
+        'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
+        'USERPROFILE' => $userProfile,
+        'HOME' => $userProfile,
+        'HOMEDRIVE' => 'C:',
+        'HOMEPATH' => str_replace('C:', '', $userProfile),
+        'LOCALAPPDATA' => $userProfile . '\\AppData\\Local',
+        'APPDATA' => $userProfile . '\\AppData\\Roaming',
+        'GIT_TERMINAL_PROMPT' => '0'
+    ];
+    return $env;
+}
+
 function runGitCommand($gitSubcmd, $workingDir = null) {
     $workingDir = $workingDir ?: getRepoDirectory();
     $gitBin = getGitBinary();
@@ -69,7 +99,7 @@ function runGitCommand($gitSubcmd, $workingDir = null) {
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w']
     ];
-    $process = proc_open($cmd, $descriptor, $pipes, $workingDir);
+    $process = proc_open($cmd, $descriptor, $pipes, $workingDir, getGitEnvironment());
     if (!is_resource($process)) {
         return ['output' => 'Error al iniciar proceso Git', 'code' => -1];
     }
@@ -103,7 +133,7 @@ function ensureGitRepository($repoDir, $remoteUrl = 'https://github.com/networkt
     runGitCommand('init', $repoDir);
     runGitCommand('config core.autocrlf true', $repoDir);
     runGitCommand("remote add origin {$remoteUrl}", $repoDir);
-    runGitCommand('fetch origin main', $repoDir);
+    runGitCommand('fetch origin main:refs/remotes/origin/main', $repoDir);
     runGitCommand('branch -M main', $repoDir);
     return isGitRepository($repoDir);
 }
@@ -163,15 +193,19 @@ switch ($action) {
             exit;
         }
 
-        $fetchRes = runGitCommand('fetch origin main', $repoDir);
-        $localCommit = runGitCommand('rev-parse HEAD', $repoDir)['output'];
-        $remoteCommit = runGitCommand('rev-parse origin/main', $repoDir)['output'];
+        // Fetch garantizando actualización de origin/main
+        $fetchRes = runGitCommand('fetch origin main:refs/remotes/origin/main', $repoDir);
+        $localCommit = runGitCommand('rev-parse --short HEAD', $repoDir)['output'];
+        $remoteCommit = runGitCommand('rev-parse --short origin/main', $repoDir)['output'];
 
-        $hasUpdates = false;
+        // Comprobar con precisión cuántos commits remotos faltan por descargar localmente
+        $behindCheck = runGitCommand('rev-list --count HEAD..origin/main', $repoDir);
+        $commitsBehindCount = is_numeric($behindCheck['output']) ? (int)$behindCheck['output'] : 0;
+
+        $hasUpdates = ($commitsBehindCount > 0);
         $commitsBehind = [];
 
-        if (!empty($remoteCommit) && $localCommit !== $remoteCommit) {
-            $hasUpdates = true;
+        if ($hasUpdates) {
             $logRes = runGitCommand('log HEAD..origin/main --oneline -n 10', $repoDir);
             if (!empty($logRes['output'])) {
                 $commitsBehind = explode("\n", $logRes['output']);
@@ -183,13 +217,14 @@ switch ($action) {
         echo json_encode([
             'success' => true,
             'has_updates' => $hasUpdates,
-            'local_commit' => substr($localCommit, 0, 7),
-            'remote_commit' => substr($remoteCommit, 0, 7),
+            'local_commit' => $localCommit,
+            'remote_commit' => $remoteCommit,
             'commits_behind' => $commitsBehind,
+            'commits_behind_count' => $commitsBehindCount,
             'pending_migrations' => $migrationStatus['pending_count'],
             'message' => $hasUpdates 
-                ? '¡Hay nuevas actualizaciones disponibles en el repositorio!' 
-                : 'Tu sistema ya está en la versión más reciente.'
+                ? "¡Hay {$commitsBehindCount} nueva(s) actualización(es) disponibles en GitHub!" 
+                : 'Tu sistema ya está en la versión más reciente (Al día).'
         ]);
         break;
 
