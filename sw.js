@@ -1,4 +1,4 @@
-const CACHE_NAME = 'factusys-pwa-v3.1';
+const CACHE_NAME = 'factusys-pwa-v3.4';
 const OFFLINE_URL = './offline.html';
 
 const PRECACHE_ASSETS = [
