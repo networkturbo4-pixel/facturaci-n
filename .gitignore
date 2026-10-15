@@ -1,0 +1,46 @@
+# =============================================================
+# FACTUSYS - Reglas de Exclusión Git (.gitignore)
+# Protege credenciales locales, archivos generados y almacenamiento
+# =============================================================
+
+# Configuración local sensible de Base de Datos
+includes/db.config.php
+.env
+.env.local
+.env.*.local
+
+# Archivos de certificados digitales sensibles
+storage/certs/*
+!storage/certs/.gitkeep
+
+# Almacenamiento de XML, CDR y PDF generados (comprobantes de clientes)
+storage/xml/*
+!storage/xml/.gitkeep
+storage/cdr/*
+!storage/cdr/.gitkeep
+storage/pdf/*
+!storage/pdf/.gitkeep
+storage/backups/*
+!storage/backups/.gitkeep
+
+# Subidas dinámicas de usuarios (logos personalizados, adjuntos)
+uploads/*
+!uploads/.gitkeep
+!uploads/branding/
+uploads/branding/*
+!uploads/branding/.gitkeep
+!uploads/branding/default-*
+!uploads/branding/.htaccess
+
+# Archivos de sistema / Logs / Binarios
+composer.phar
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores / IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

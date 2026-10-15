@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>Sin Conexión • FACTUSYS PWA</title>
+    <link rel="icon" href="uploads/branding/default-favicon.png">
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: light-dark(#f8fafc, #0b0f19);
+            color: light-dark(#0f172a, #f8fafc);
+        }
+        .card {
+            max-width: 440px;
+            width: 100%;
+            background: light-dark(#ffffff, #111827);
+            border: 1px solid light-dark(#e2e8f0, #1f2937);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            text-align: center;
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.15);
+        }
+        .icon-box {
+            width: 72px;
+            height: 72px;
+            border-radius: 1.25rem;
+            background: linear-gradient(135deg, #4f46e5, #2563eb);
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.4);
+        }
+        h1 { font-size: 1.35rem; font-weight: 800; margin-bottom: 0.6rem; }
+        p { font-size: 0.875rem; line-height: 1.6; color: light-dark(#64748b, #94a3b8); margin-bottom: 1.75rem; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            padding: 0.85rem 1.25rem;
+            border-radius: 0.85rem;
+            border: none;
+            background: linear-gradient(135deg, #4f46e5, #4338ca);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.95; transform: translateY(-1px); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon-box">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+                <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+        </div>
+        <h1>Modo Sin Conexión Activo</h1>
+        <p>No se pudo conectar con el servidor de facturación. Verifica tu conexión de red local o a Internet para sincronizar tus comprobantes.</p>
+        <button class="btn" onclick="window.location.reload()">
+            Reintentar Conexión
+        </button>
+    </div>
+</body>
+</html>
