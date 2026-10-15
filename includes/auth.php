@@ -1,8 +1,31 @@
 <?php
+// Configuración de Seguridad y Sesión en Producción
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');
     ini_set('session.use_only_cookies', '1');
+    ini_set('session.cookie_samesite', 'Lax');
+
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+        || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443);
+
+    if ($isHttps) {
+        ini_set('session.cookie_secure', '1');
+    }
+
     session_start();
+}
+
+// En producción, silenciar salida directa de errores y registrar en log seguro
+if (!defined('APP_DEBUG')) {
+    define('APP_DEBUG', false);
+}
+
+if (!APP_DEBUG) {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+    ini_set('log_errors', '1');
+    error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 }
 
 require_once __DIR__ . '/db.php';

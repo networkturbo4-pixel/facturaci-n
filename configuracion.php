@@ -1554,7 +1554,7 @@ include 'includes/header.php';
                                     </div>
                                 </div>
 
-                                <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                                <div class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                     <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1.5">
                                         <span class="text-slate-400 text-[11px] font-semibold uppercase tracking-wider block">Repositorio Origen</span>
                                         <div class="flex items-center gap-2">
@@ -1575,6 +1575,13 @@ include 'includes/header.php';
                                         <div class="flex items-center gap-2">
                                             <span class="w-2 h-2 rounded-full bg-emerald-500" id="db_status_dot"></span>
                                             <span class="font-semibold text-emerald-600 dark:text-emerald-400" id="db_status_text">Verificando...</span>
+                                        </div>
+                                    </div>
+                                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/60 space-y-1.5">
+                                        <span class="text-slate-400 text-[11px] font-semibold uppercase tracking-wider block">Entorno de Producción</span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500" id="prod_health_dot"></span>
+                                            <span class="font-semibold text-emerald-600 dark:text-emerald-400" id="prod_health_badge">Verificando...</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1895,6 +1902,25 @@ async function cargarEstadoActualizaciones() {
     } catch (e) {
         console.warn('No se pudo cargar estado de actualizaciones:', e);
     }
+
+    // Diagnóstico de Salud de Producción
+    try {
+        const rh = await fetch('api/health.php');
+        const dh = await rh.json();
+        const prodHealth = document.getElementById('prod_health_badge');
+        const prodHealthDot = document.getElementById('prod_health_dot');
+        if (prodHealth && prodHealthDot) {
+            if (dh.production_ready) {
+                prodHealth.textContent = 'Saludable • Listo';
+                prodHealth.className = 'font-semibold text-emerald-600 dark:text-emerald-400';
+                prodHealthDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+            } else {
+                prodHealth.textContent = 'Revisar Permisos / BD';
+                prodHealth.className = 'font-semibold text-amber-500';
+                prodHealthDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+            }
+        }
+    } catch (e) {}
 }
 
 async function comprobarActualizaciones() {

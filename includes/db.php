@@ -24,9 +24,18 @@ if (file_exists($localConfig)) {
     @file_put_contents($localConfig, $initialConfig);
 }
 
+// Soporte para variables de entorno (Docker, Kubernetes, Cloud VPS, .env)
+$host     = getenv('DB_HOST') ?: $host;
+$username = getenv('DB_USER') ?: $username;
+$password = getenv('DB_PASS') !== false ? getenv('DB_PASS') : $password;
+$database = getenv('DB_NAME') ?: $database;
+
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $username, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $conn = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ]);
 } catch(PDOException $e) {
     // Si la base de datos no existe (código 1049 o texto), inicializarla automáticamente con el Migrador
     if ($e->getCode() == 1049 || strpos($e->getMessage(), 'Unknown database') !== false) {
@@ -36,16 +45,21 @@ try {
             $pdoRoot->exec("CREATE DATABASE IF NOT EXISTS `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
             $pdoRoot->exec("USE `$database`");
 
-            $conn = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $username, $password);
-            $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $conn = new PDO("mysql:host=$host;dbname=$database;charset=utf8mb4", $username, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
 
             require_once __DIR__ . '/migrator.php';
             Migrator::runMigrations($conn);
         } catch(PDOException $ex) {
-            die("Error al inicializar automáticamente la base de datos: " . $ex->getMessage());
+            error_log("FACTUSYS DB Init Error: " . $ex->getMessage());
+            die("Error al inicializar la base de datos. Por favor revise los permisos del usuario MySQL o el log del servidor.");
         }
     } else {
-        die("Error de conexión a la base de datos: " . $e->getMessage());
+        error_log("FACTUSYS DB Connection Error: " . $e->getMessage());
+        die("Error de conexión a la base de datos. Verifique sus credenciales en <code>includes/db.config.php</code> o variables de entorno.");
     }
 }
 ?>
