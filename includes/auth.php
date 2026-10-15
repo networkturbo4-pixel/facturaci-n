@@ -59,16 +59,26 @@ function currentUser(): array {
  */
 function requireLogin(): void {
     if (!isLoggedIn()) {
-        // Si es una petición AJAX / JSON
-        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)) {
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $script = $_SERVER['SCRIPT_NAME'] ?? '';
+        $isApi = (strpos($uri, '/api/') !== false)
+            || (strpos($script, '/api/') !== false)
+            || !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+            || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+
+        if ($isApi) {
             http_response_code(401);
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Sesión expirada o no autorizada. Inicia sesión.']);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'session_expired' => true,
+                'message' => 'Sesión expirada o no autorizada. Por favor inicie sesión nuevamente.'
+            ]);
             exit;
         }
 
-        $currentUri = $_SERVER['REQUEST_URI'] ?? 'index.php';
-        header("Location: login.php?redirect=" . urlencode($currentUri));
+        $loginPath = (strpos($script, '/api/') !== false) ? '../login.php' : 'login.php';
+        header("Location: {$loginPath}?redirect=" . urlencode($uri ?: 'index.php'));
         exit;
     }
 }
@@ -81,6 +91,23 @@ function requireRole($roles): void {
     $u = currentUser();
     $allowed = is_array($roles) ? $roles : [$roles];
     if (!in_array($u['rol'], $allowed)) {
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $script = $_SERVER['SCRIPT_NAME'] ?? '';
+        $isApi = (strpos($uri, '/api/') !== false)
+            || (strpos($script, '/api/') !== false)
+            || !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+            || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+
+        if ($isApi) {
+            http_response_code(403);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'Acceso denegado: No tienes permisos suficientes para realizar esta acción.'
+            ]);
+            exit;
+        }
+
         http_response_code(403);
         echo "<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Acceso Denegado</title><script src='https://cdn.tailwindcss.com'></script></head><body class='h-screen flex items-center justify-center bg-slate-900 text-white'><div class='text-center p-8 bg-slate-800 rounded-2xl border border-slate-700 max-w-md'><h1 class='text-2xl font-bold text-red-400 mb-2'>Acceso Restringido</h1><p class='text-slate-300 text-sm mb-6'>No tienes permisos de Administrador para acceder a esta sección.</p><a href='index.php' class='px-4 py-2 bg-indigo-600 rounded-xl text-white text-sm font-semibold'>Volver al Inicio</a></div></body></html>";
         exit;

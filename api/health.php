@@ -24,10 +24,10 @@ try {
 
 if (!$isFullCheck) {
     if ($dbOk) {
-        echo json_encode(['status' => 'healthy', 'timestamp' => time()]);
+        echo json_encode(['status' => 'healthy', 'production_ready' => true, 'timestamp' => time()]);
     } else {
         http_response_code(503);
-        echo json_encode(['status' => 'unhealthy', 'error' => 'Database unreachable']);
+        echo json_encode(['status' => 'unhealthy', 'production_ready' => false, 'error' => 'Database unreachable']);
     }
     exit;
 }
@@ -42,16 +42,16 @@ foreach ($requiredExtensions as $ext) {
     if (!$loaded) $allExtOk = false;
 }
 
-// Directorios con permisos de escritura requeridos
-$writableDirs = [
-    'uploads' => is_writable(__DIR__ . '/../uploads'),
-    'uploads/branding' => is_writable(__DIR__ . '/../uploads/branding'),
-    'storage' => is_writable(__DIR__ . '/../storage'),
-    'storage/xml' => is_writable(__DIR__ . '/../storage/xml'),
-    'storage/cdr' => is_writable(__DIR__ . '/../storage/cdr'),
-    'storage/pdf' => is_writable(__DIR__ . '/../storage/pdf'),
-    'storage/certs' => is_writable(__DIR__ . '/../storage/certs'),
-];
+// Directorios con permisos de escritura requeridos (auto-crear si no existen)
+$dirsToCheck = ['uploads', 'uploads/branding', 'storage', 'storage/xml', 'storage/cdr', 'storage/pdf', 'storage/certs'];
+$writableDirs = [];
+foreach ($dirsToCheck as $d) {
+    $full = __DIR__ . '/../' . $d;
+    if (!file_exists($full)) {
+        @mkdir($full, 0755, true);
+    }
+    $writableDirs[$d] = is_writable($full);
+}
 $allDirsOk = !in_array(false, $writableDirs, true);
 
 // Proveedor SUNAT configurado

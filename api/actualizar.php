@@ -154,13 +154,16 @@ switch ($action) {
 
         if ($isGitRepo && $gitInstalled) {
             $branchRes = runGitCommand('branch --show-current', $repoDir);
-            $currentBranch = $branchRes['output'] ?: 'main';
+            $bOut = trim($branchRes['output'] ?? '');
+            $currentBranch = ($branchRes['code'] === 0 && strpos($bOut, 'fatal:') === false && !empty($bOut)) ? $bOut : 'main';
 
             $commitRes = runGitCommand('rev-parse --short HEAD', $repoDir);
-            $currentCommit = $commitRes['output'];
+            $cOut = trim($commitRes['output'] ?? '');
+            $currentCommit = ($commitRes['code'] === 0 && strpos($cOut, 'fatal:') === false && preg_match('/^[a-f0-9]{6,40}$/i', $cOut)) ? $cOut : '';
 
             $remoteRes = runGitCommand('config --get remote.origin.url', $repoDir);
-            $remoteUrl = $remoteRes['output'];
+            $rOut = trim($remoteRes['output'] ?? '');
+            $remoteUrl = ($remoteRes['code'] === 0 && strpos($rOut, 'fatal:') === false && !empty($rOut)) ? $rOut : '';
         }
 
         // Historial de actualizaciones recientes
@@ -195,20 +198,24 @@ switch ($action) {
 
         // Fetch garantizando actualización de origin/main
         $fetchRes = runGitCommand('fetch origin main:refs/remotes/origin/main', $repoDir);
-        $localCommit = runGitCommand('rev-parse --short HEAD', $repoDir)['output'];
-        $remoteCommit = runGitCommand('rev-parse --short origin/main', $repoDir)['output'];
+        $localRes = runGitCommand('rev-parse --short HEAD', $repoDir);
+        $localCommit = ($localRes['code'] === 0 && preg_match('/^[a-f0-9]{6,40}$/i', trim($localRes['output'] ?? ''))) ? trim($localRes['output']) : '';
+
+        $remoteRes = runGitCommand('rev-parse --short origin/main', $repoDir);
+        $remoteCommit = ($remoteRes['code'] === 0 && preg_match('/^[a-f0-9]{6,40}$/i', trim($remoteRes['output'] ?? ''))) ? trim($remoteRes['output']) : '';
 
         // Comprobar con precisión cuántos commits remotos faltan por descargar localmente
         $behindCheck = runGitCommand('rev-list --count HEAD..origin/main', $repoDir);
-        $commitsBehindCount = is_numeric($behindCheck['output']) ? (int)$behindCheck['output'] : 0;
+        $bOut = trim($behindCheck['output'] ?? '');
+        $commitsBehindCount = ($behindCheck['code'] === 0 && is_numeric($bOut)) ? (int)$bOut : 0;
 
         $hasUpdates = ($commitsBehindCount > 0);
         $commitsBehind = [];
 
         if ($hasUpdates) {
             $logRes = runGitCommand('log HEAD..origin/main --oneline -n 10', $repoDir);
-            if (!empty($logRes['output'])) {
-                $commitsBehind = explode("\n", $logRes['output']);
+            if (!empty($logRes['output']) && strpos($logRes['output'], 'fatal:') === false) {
+                $commitsBehind = explode("\n", trim($logRes['output']));
             }
         }
 

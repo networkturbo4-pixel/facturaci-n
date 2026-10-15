@@ -1884,10 +1884,38 @@ function limpiarConsolaLogs() {
     if (box) box.innerHTML = '<p class="text-slate-500">[INFO] Consola limpia. Listo para nuevas acciones.</p>';
 }
 
+async function requestApiJson(url, options = {}) {
+    const opts = Object.assign({}, options);
+    opts.headers = Object.assign({
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+    }, opts.headers || {});
+
+    const res = await fetch(url, opts);
+    const contentType = res.headers.get('content-type') || '';
+
+    if (res.status === 401) {
+        throw new Error('Sesión expirada o no autorizada. Por favor recargue la página o inicie sesión nuevamente.');
+    }
+
+    if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+            throw new Error('La sesión de usuario ha caducado o el endpoint no respondió en formato JSON. Recargue la página.');
+        }
+        throw new Error('Respuesta no válida del servidor.');
+    }
+
+    const data = await res.json();
+    if (data.session_expired) {
+        throw new Error(data.message || 'Sesión expirada.');
+    }
+    return data;
+}
+
 async function cargarEstadoActualizaciones() {
     try {
-        const r = await fetch('api/actualizar.php?action=status');
-        const data = await r.json();
+        const data = await requestApiJson('api/actualizar.php?action=status');
         if (data.success) {
             const urlDisp = document.getElementById('repo_url_display');
             if (urlDisp) urlDisp.textContent = data.remote_url || 'https://github.com/networkturbo4-pixel/facturaci-n.git';
@@ -1896,34 +1924,37 @@ async function cargarEstadoActualizaciones() {
             if (branchDisp) branchDisp.textContent = data.current_branch || 'main';
 
             const commitDisp = document.getElementById('repo_commit_display');
-            if (commitDisp) commitDisp.textContent = data.current_commit ? ('#' + data.current_commit) : 'v2.6';
+            if (commitDisp) {
+                commitDisp.textContent = (data.current_commit && data.current_commit.indexOf('fatal') === -1) 
+                    ? ('#' + data.current_commit) 
+                    : 'v2.6';
+            }
 
             const dbText = document.getElementById('db_status_text');
             const dbDot = document.getElementById('db_status_dot');
-            if (dbText && dbDot) {
+            if (dbText && dbDot && data.migrations) {
                 if (data.migrations.pending_count > 0) {
                     dbText.textContent = `${data.migrations.pending_count} migración(es) pendiente(s)`;
                     dbText.className = 'font-semibold text-amber-500';
                     dbDot.className = 'w-2 h-2 rounded-full bg-amber-500 animate-pulse';
                 } else {
-                    dbText.textContent = `Al día (${data.migrations.applied_count} migraciones OK)`;
+                    dbText.textContent = `Al día (${data.migrations.applied_count || 0} migraciones OK)`;
                     dbText.className = 'font-semibold text-emerald-500';
                     dbDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
                 }
             }
         }
     } catch (e) {
-        console.warn('No se pudo cargar estado de actualizaciones:', e);
+        console.warn('No se pudo cargar estado de actualizaciones:', e.message);
     }
 
     // Diagnóstico de Salud de Producción
     try {
-        const rh = await fetch('api/health.php');
-        const dh = await rh.json();
+        const dh = await requestApiJson('api/health.php');
         const prodHealth = document.getElementById('prod_health_badge');
         const prodHealthDot = document.getElementById('prod_health_dot');
         if (prodHealth && prodHealthDot) {
-            if (dh.production_ready) {
+            if (dh.production_ready || dh.status === 'healthy') {
                 prodHealth.textContent = 'Saludable • Listo';
                 prodHealth.className = 'font-semibold text-emerald-600 dark:text-emerald-400';
                 prodHealthDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
@@ -1933,7 +1964,9 @@ async function cargarEstadoActualizaciones() {
                 prodHealthDot.className = 'w-2 h-2 rounded-full bg-amber-500';
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.warn('Diagnóstico de salud:', e.message);
+    }
 }
 
 async function comprobarActualizaciones() {
@@ -1945,12 +1978,11 @@ async function comprobarActualizaciones() {
     appendConsoleLog('Iniciando comprobación con GitHub (git fetch)...', 'info');
 
     try {
-        const res = await fetch('api/actualizar.php', {
+        const data = await requestApiJson('api/actualizar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: 'action=check'
         });
-        const data = await res.json();
 
         if (data.success) {
             if (data.has_updates) {
@@ -1961,7 +1993,8 @@ async function comprobarActualizaciones() {
                 appendConsoleLog('Pulsa "2. Actualizar Sistema Ahora" para descargar las mejoras con seguridad.', 'info');
                 window.showToast('Hay una nueva versión disponible para descargar.', 'info', 'Actualización Disponible');
             } else {
-                appendConsoleLog(`El sistema está al día con la última versión (${data.local_commit}).`, 'success');
+                const commitLabel = data.local_commit ? ` #${data.local_commit}` : '';
+                appendConsoleLog(`✓ Tu sistema está al día con la última versión${commitLabel}. No se requieren descargas.`, 'success');
                 window.showToast('El sistema ya cuenta con la versión más reciente.', 'success', 'Sistema al Día');
             }
         } else {
@@ -1969,8 +2002,8 @@ async function comprobarActualizaciones() {
             window.showToast(data.message, 'warning', 'Aviso');
         }
     } catch (e) {
-        appendConsoleLog('Error de red al comprobar actualizaciones: ' + e.message, 'error');
-        window.showToast('Error al conectar con la API de actualización.', 'error', 'Error');
+        appendConsoleLog('❌ ' + e.message, 'error');
+        window.showToast(e.message, 'error', 'Actualizaciones');
     } finally {
         btn.disabled = false;
         btn.innerHTML = origHtml;
@@ -1995,12 +2028,11 @@ async function ejecutarActualizacionSistema() {
     appendConsoleLog('=== INICIANDO PROCESO DE ACTUALIZACIÓN DEL SISTEMA ===', 'info');
 
     try {
-        const res = await fetch('api/actualizar.php', {
+        const data = await requestApiJson('api/actualizar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: 'action=update'
         });
-        const data = await res.json();
 
         if (data.logs && Array.isArray(data.logs)) {
             data.logs.forEach(l => appendConsoleLog(l, data.success ? 'success' : 'info'));
@@ -2014,7 +2046,7 @@ async function ejecutarActualizacionSistema() {
             window.showToast(data.message, 'error', 'Error de Actualización');
         }
     } catch (e) {
-        appendConsoleLog('Error de ejecución en la actualización: ' + e.message, 'error');
+        appendConsoleLog('❌ Error: ' + e.message, 'error');
         window.showToast(e.message, 'error', 'Error');
     } finally {
         btn.disabled = false;
@@ -2032,12 +2064,11 @@ async function ejecutarMigracionesBD() {
     appendConsoleLog('Verificando archivos de migración SQL...', 'info');
 
     try {
-        const res = await fetch('api/actualizar.php', {
+        const data = await requestApiJson('api/actualizar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: 'action=migrate'
         });
-        const data = await res.json();
 
         if (data.success) {
             if (data.count > 0) {
@@ -2052,7 +2083,8 @@ async function ejecutarMigracionesBD() {
             window.showToast(data.error, 'error', 'Error BD');
         }
     } catch (e) {
-        appendConsoleLog('Error de red al ejecutar migraciones: ' + e.message, 'error');
+        appendConsoleLog('❌ Error: ' + e.message, 'error');
+        window.showToast(e.message, 'error', 'Error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = origHtml;
