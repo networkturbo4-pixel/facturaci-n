@@ -14,6 +14,10 @@ require_once __DIR__ . '/../includes/auth.php';
  * @return array
  * @throws Exception
  */
+function enviarComprobanteSunat(int $comprobante_id, PDO $conn): array {
+    return enviarComprobanteNubefact($comprobante_id, $conn);
+}
+
 function enviarComprobanteNubefact(int $comprobante_id, PDO $conn): array {
     // 1. Obtener configuración
     $cfg = [];
@@ -24,8 +28,14 @@ function enviarComprobanteNubefact(int $comprobante_id, PDO $conn): array {
 
     $proveedor = strtolower($cfg['facturacion_proveedor'] ?? 'greenter');
 
-    // Si el proveedor seleccionado es Greenter (o si no hay token de Nubefact configurado)
-    if ($proveedor === 'greenter' || (empty($cfg['nubefact_token']) && !empty($cfg['sunat_usuario_sol']))) {
+    // 1.1 Si el proveedor seleccionado es Facturalo (o tiene token configurado)
+    if ($proveedor === 'facturalo' || (!empty($cfg['facturalo_token']) && $proveedor !== 'greenter' && empty($cfg['nubefact_token']))) {
+        require_once __DIR__ . '/../includes/facturalo_service.php';
+        return enviarComprobanteFacturalo($comprobante_id, $conn);
+    }
+
+    // 1.2 Si el proveedor seleccionado es Greenter (o si no hay token de OSE configurado)
+    if ($proveedor === 'greenter' || (empty($cfg['nubefact_token']) && empty($cfg['facturalo_token']) && !empty($cfg['sunat_usuario_sol']))) {
         require_once __DIR__ . '/../includes/greenter_service.php';
         return enviarComprobanteGreenter($comprobante_id, $conn);
     }
@@ -34,7 +44,12 @@ function enviarComprobanteNubefact(int $comprobante_id, PDO $conn): array {
     $nubefact_token = $cfg['nubefact_token'] ?? '';
 
     if (empty($nubefact_url) || empty($nubefact_token)) {
-        // Si no hay Nubefact pero Greenter está disponible, usar Greenter como fallback seguro
+        // Fallback a Facturalo si existe token
+        if (!empty($cfg['facturalo_token'])) {
+            require_once __DIR__ . '/../includes/facturalo_service.php';
+            return enviarComprobanteFacturalo($comprobante_id, $conn);
+        }
+        // Fallback a Greenter
         require_once __DIR__ . '/../includes/greenter_service.php';
         return enviarComprobanteGreenter($comprobante_id, $conn);
     }

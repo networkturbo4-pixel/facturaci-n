@@ -66,9 +66,20 @@ try {
     }
 } catch (Exception $e) {}
 
-// 2. Consultar API externa con token protegido
+// 2. Consultar primero vía Facturalo API v3 si está configurado
+$facturaloToken = getSystemConfig('facturalo_token', '');
+if (!empty($facturaloToken)) {
+    require_once __DIR__ . '/../includes/facturalo_service.php';
+    $resFacturalo = consultarDocumentoFacturalo($tipoDoc, $numDoc, $facturaloToken, $conn);
+    if (!empty($resFacturalo['success'])) {
+        echo json_encode($resFacturalo);
+        exit;
+    }
+}
+
+// 3. Fallback: Consultar API alternativa (json.pe) con token protegido
 $token = getSystemConfig('api_token_documento', '4c06130c30c4789e8f0e66ad9eafe82c3bbea10e2895503e9a2359b75fea');
-if (empty($token)) {
+if (empty($token) && empty($facturaloToken)) {
     echo json_encode(['success' => false, 'message' => 'Token de consulta no configurado en el sistema.']);
     exit;
 }

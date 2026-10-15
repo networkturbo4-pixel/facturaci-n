@@ -162,9 +162,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_configuracion
                 'empresa_ruc', 'empresa_razon_social', 'empresa_nombre_comercial',
                 'empresa_direccion', 'empresa_telefono', 'empresa_correo', 'empresa_web',
                 'empresa_ubigeo', 'empresa_departamento', 'empresa_provincia', 'empresa_distrito',
-                // SUNAT / OSE
+                // SUNAT / OSE / Facturalo
                 'facturacion_proveedor', 'sunat_modo', 'sunat_usuario_sol',
-                'nubefact_url', 'nubefact_modo',
+                'facturalo_modo', 'nubefact_url', 'nubefact_modo',
                 // Series
                 'serie_factura', 'serie_boleta', 'serie_exportacion', 'serie_guia'
             ];
@@ -181,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_configuracion
             }
 
             // Campos sensibles (contraseñas / tokens): solo actualizar si se enviaron
-            $camposSensibles = ['sunat_clave_sol', 'sunat_cert_password', 'nubefact_token', 'api_token_documento'];
+            $camposSensibles = ['sunat_clave_sol', 'sunat_cert_password', 'facturalo_token', 'nubefact_token', 'api_token_documento'];
             foreach ($camposSensibles as $campoS) {
                 if (isset($_POST[$campoS]) && trim($_POST[$campoS]) !== '') {
                     $stmt->execute([$campoS, trim($_POST[$campoS])]);
@@ -1289,14 +1289,14 @@ include 'includes/header.php';
                                                     <p class="text-xs text-slate-500 mt-1">Conexión directa SOAP UBL 2.1 con servidores de SUNAT y firma local X.509.</p>
                                                 </div>
                                             </label>
-                                            <label class="border-2 rounded-2xl p-4 cursor-pointer transition-all flex items-start gap-3 <?php echo ($prov === 'nubefact') ? 'border-blue-500 bg-blue-50/40 dark:bg-blue-500/10' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'; ?>">
-                                                <input type="radio" name="facturacion_proveedor" value="nubefact" class="mt-1 text-blue-600 focus:ring-blue-500" <?php echo ($prov === 'nubefact') ? 'checked' : ''; ?> onchange="toggleProveedor()">
+                                            <label class="border-2 rounded-2xl p-4 cursor-pointer transition-all flex items-start gap-3 <?php echo ($prov === 'facturalo' || $prov === 'nubefact') ? 'border-sky-500 bg-sky-50/40 dark:bg-sky-500/10' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'; ?>">
+                                                <input type="radio" name="facturacion_proveedor" value="facturalo" class="mt-1 text-sky-600 focus:ring-sky-500" <?php echo ($prov === 'facturalo' || $prov === 'nubefact') ? 'checked' : ''; ?> onchange="toggleProveedor()">
                                                 <div>
                                                     <p class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                                                        Nubefact OSE
-                                                        <span class="text-[10px] bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300 font-medium px-2 py-0.5 rounded-full">API REST</span>
+                                                        Facturalo.pe API v3
+                                                        <span class="text-[10px] bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 font-bold px-2 py-0.5 rounded-full">RECOMENDADO</span>
                                                     </p>
-                                                    <p class="text-xs text-slate-500 mt-1">Operador de Servicios Electrónicos externo en la nube mediante token API.</p>
+                                                    <p class="text-xs text-slate-500 mt-1">API REST de alta velocidad con cálculo de IGV automático y consultas DNI/RUC integradas.</p>
                                                 </div>
                                             </label>
                                         </div>
@@ -1364,30 +1364,65 @@ include 'includes/header.php';
                                         </div>
                                     </div>
 
-                                    <!-- SECCIÓN NUBEFACT -->
-                                    <div id="sec-nubefact" class="space-y-5 <?php echo ($prov !== 'nubefact') ? 'hidden' : ''; ?>">
-                                        <div>
-                                            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">URL del Endpoint Nubefact</label>
-                                            <input type="text" name="nubefact_url" value="<?php echo htmlspecialchars($cfg['nubefact_url'] ?? ''); ?>" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-mono" placeholder="https://api.nubefact.com/api/v1/...">
+                                    <!-- SECCIÓN FACTURALO API V3 -->
+                                    <div id="sec-facturalo" class="space-y-5 <?php echo ($prov === 'greenter') ? 'hidden' : ''; ?>">
+                                        <div class="bg-sky-50/80 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/25 rounded-2xl p-4 flex items-start gap-3">
+                                            <i class="fa-solid fa-bolt-lightning text-sky-600 dark:text-sky-400 text-lg mt-0.5 shrink-0"></i>
+                                            <div>
+                                                <p class="text-xs font-bold text-sky-900 dark:text-sky-200">Facturación Electrónica y Consultas SUNAT/RENIEC Unificadas</p>
+                                                <p class="text-xs text-sky-700 dark:text-sky-300/80 mt-0.5">
+                                                    Facturalo API v3 automatiza el cálculo de IGV, firma digital, envío a SUNAT, links a PDF/XML/CDR y consultas de DNI y RUC con un solo token de acceso.
+                                                </p>
+                                            </div>
                                         </div>
+
                                         <div>
-                                            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">Token de Autenticación Nubefact</label>
-                                            <input type="password" name="nubefact_token" value="" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-mono" placeholder="<?php echo !empty($cfg['nubefact_token']) ? '•••••••••••••••• (Token guardado - escribe para reemplazar)' : 'Ingresa el Token Nubefact'; ?>">
+                                            <div class="flex items-center justify-between mb-1.5">
+                                                <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+                                                    Secret Token Facturalo API v3
+                                                </label>
+                                                <span id="badge_facturalo_mode" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                                    <?php
+                                                    $curFactToken = $cfg['facturalo_token'] ?? '';
+                                                    if (str_starts_with($curFactToken, 'sk_test_')) {
+                                                        echo '🧪 MODO DEMO / PRUEBAS';
+                                                    } elseif (str_starts_with($curFactToken, 'sk_live_')) {
+                                                        echo '🚀 MODO PRODUCCIÓN';
+                                                    } else {
+                                                        echo !empty($curFactToken) ? '🔒 TOKEN CONFIGURADO' : '⚪ TOKEN NO CONFIGURADO';
+                                                    }
+                                                    ?>
+                                                </span>
+                                            </div>
+                                            <div class="relative">
+                                                <input type="password" id="inp_facturalo_token" name="facturalo_token" value="" oninput="detectarModoFacturalo(this.value)" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-mono pr-12 focus:outline-none focus:border-sky-500" placeholder="<?php echo !empty($cfg['facturalo_token']) ? '•••••••••••••••• (Token guardado - escribe para reemplazar)' : 'sk_test_... o sk_live_...'; ?>">
+                                                <button type="button" onclick="togglePasswordVisibility('inp_facturalo_token', this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm p-1">
+                                                    <i class="fa-solid fa-eye"></i>
+                                                </button>
+                                            </div>
+                                            <p class="text-[11px] text-slate-400 mt-1">
+                                                Tokens que inician con <code class="text-sky-600 font-bold">sk_test_...</code> emiten a servidores Demo SUNAT. Tokens <code class="text-emerald-600 font-bold">sk_live_...</code> emiten en Producción con validez fiscal legal.
+                                            </p>
                                         </div>
-                                        <div>
-                                            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">Modo Nubefact</label>
-                                            <select name="nubefact_modo" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5">
-                                                <option value="beta" <?php echo ($cfg['nubefact_modo'] ?? '') === 'beta' ? 'selected' : ''; ?>>🧪 Beta / Pruebas</option>
-                                                <option value="produccion" <?php echo ($cfg['nubefact_modo'] ?? '') === 'produccion' ? 'selected' : ''; ?>>🚀 Producción</option>
-                                            </select>
+
+                                        <div class="pt-1">
+                                            <button type="button" id="btn_test_facturalo" onclick="testConexionFacturalo()" class="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm">
+                                                <i class="fa-solid fa-satellite-dish"></i> Probar Conexión con Facturalo API v3
+                                            </button>
+                                            <div id="test_facturalo_result" class="mt-3 text-sm hidden"></div>
                                         </div>
                                     </div>
 
-                                    <!-- CONSULTA DNI / RUC -->
+                                    <!-- CONSULTA DNI / RUC RESPALDO -->
                                     <div class="border-t border-slate-100 dark:border-slate-800 pt-5">
-                                        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-1.5">Token API Consulta DNI / RUC (RENIEC / SUNAT)</label>
-                                        <input type="password" name="api_token_documento" value="" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-mono" placeholder="<?php echo !empty($cfg['api_token_documento']) ? '•••••••••••••••• (Token configurado - escribe para actualizar)' : 'Token Bearer para json.pe'; ?>">
-                                        <p class="text-[11px] text-slate-400 mt-1">Se utiliza desde el servidor para autocompletar datos de clientes y proveedores por RUC o DNI.</p>
+                                        <div class="flex items-center justify-between mb-1.5">
+                                            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+                                                Token de Consulta de Respaldo (api.json.pe)
+                                            </label>
+                                            <span class="text-[10px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded">CONTINGENCIA</span>
+                                        </div>
+                                        <input type="password" name="api_token_documento" value="" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-mono" placeholder="<?php echo !empty($cfg['api_token_documento']) ? '•••••••••••••••• (Token configurado - escribe para actualizar)' : 'Token Bearer para json.pe (Opcional)'; ?>">
+                                        <p class="text-[11px] text-slate-400 mt-1">Cuando Facturalo está configurado, las consultas de RUC y DNI se realizan a través de Facturalo automáticamente. Este token actúa como contingencia secundaria.</p>
                                     </div>
                                 </div>
 
@@ -1756,11 +1791,81 @@ async function probarModalEnVivo(styleOverride) {
 }
 
 function toggleProveedor() {
-    const isGreenter = document.querySelector('input[name="facturacion_proveedor"]:checked')?.value === 'greenter';
+    const prov = document.querySelector('input[name="facturacion_proveedor"]:checked')?.value || 'greenter';
     const secGreenter = document.getElementById('sec-greenter');
-    const secNubefact = document.getElementById('sec-nubefact');
-    if (secGreenter) secGreenter.classList.toggle('hidden', !isGreenter);
-    if (secNubefact) secNubefact.classList.toggle('hidden', isGreenter);
+    const secFacturalo = document.getElementById('sec-facturalo');
+    if (secGreenter) secGreenter.classList.toggle('hidden', prov !== 'greenter');
+    if (secFacturalo) secFacturalo.classList.toggle('hidden', prov === 'greenter');
+}
+
+function togglePasswordVisibility(inputId, btn) {
+    const inp = document.getElementById(inputId);
+    if (!inp) return;
+    const isPassword = inp.type === 'password';
+    inp.type = isPassword ? 'text' : 'password';
+    const icon = btn.querySelector('i');
+    if (icon) {
+        icon.className = isPassword ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+    }
+}
+
+function detectarModoFacturalo(val) {
+    const badge = document.getElementById('badge_facturalo_mode');
+    if (!badge) return;
+    val = (val || '').trim();
+    if (val.startsWith('sk_test_')) {
+        badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300';
+        badge.textContent = '🧪 MODO DEMO / PRUEBAS';
+    } else if (val.startsWith('sk_live_')) {
+        badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300';
+        badge.textContent = '🚀 MODO PRODUCCIÓN';
+    } else if (val.length > 0) {
+        badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300';
+        badge.textContent = '🔒 TOKEN CONFIGURADO';
+    } else {
+        badge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400';
+        badge.textContent = '⚪ TOKEN NO CONFIGURADO';
+    }
+}
+
+async function testConexionFacturalo() {
+    const tokenInput = document.getElementById('inp_facturalo_token');
+    const token = tokenInput ? tokenInput.value.trim() : '';
+    const btn = document.getElementById('btn_test_facturalo');
+    const res = document.getElementById('test_facturalo_result');
+    if (!btn || !res) return;
+
+    btn.disabled = true;
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Probando Facturalo API v3...';
+    res.className = 'mt-3 text-sm';
+    res.textContent = '';
+
+    try {
+        const r = await fetch('api/test_facturalo.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token })
+        });
+        const data = await r.json();
+
+        if (data.success) {
+            res.className = 'mt-3 text-xs p-3.5 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 rounded-xl flex items-start gap-2.5';
+            res.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-600 mt-0.5 shrink-0"></i><div><strong>Conexión Exitosa (' + (data.modo || 'Facturalo v3') + '):</strong> ' + data.message + '</div>';
+            window.showToast(data.message, 'success', 'Facturalo API v3');
+        } else {
+            res.className = 'mt-3 text-xs p-3.5 bg-rose-50 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 rounded-xl flex items-start gap-2.5';
+            res.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-rose-600 mt-0.5 shrink-0"></i><div><strong>Aviso Facturalo:</strong> ' + data.message + '</div>';
+            window.showToast(data.message, 'warning', 'Aviso Facturalo');
+        }
+    } catch (e) {
+        res.className = 'mt-3 text-xs p-3.5 bg-rose-50 dark:bg-rose-500/10 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 rounded-xl flex items-start gap-2.5';
+        res.innerHTML = '<i class="fa-solid fa-circle-xmark text-rose-600 mt-0.5 shrink-0"></i><div><strong>Error de Conexión:</strong> ' + e.message + '</div>';
+        window.showToast(e.message, 'error', 'Error de Red');
+    }
+    res.classList.remove('hidden');
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
 }
 
 async function consultarRucEmpresa() {

@@ -206,8 +206,8 @@ $tipo_cambio_actual = obtenerTipoCambio();
                     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
                         <i class="fa-solid fa-ship"></i> Exportación
                     </span>
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                        <i class="fa-solid fa-cloud-arrow-up"></i> Nubefact / SUNAT
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Emisión SUNAT
                     </span>
                 </div>
             </div>
