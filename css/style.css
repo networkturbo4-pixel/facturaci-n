@@ -359,10 +359,9 @@ input:focus, select:focus, textarea:focus {
 
 /* Mobile Responsive System (< 768px): Bottom Navbar Clearance + Native Card Tables (No Horizontal Scrollbar) */
 @media (max-width: 767px) {
-    main,
     main > div.overflow-y-auto,
     main > div.overflow-auto {
-        padding-bottom: 6.5rem !important;
+        padding-bottom: 5.5rem !important;
         overflow-x: hidden !important;
         max-width: 100vw !important;
     }

@@ -7,7 +7,7 @@ $isStockActive = in_array($currBottomPage, ['productos.php', 'clientes.php', 'cl
 $isCfgActive   = in_array($currBottomPage, ['configuracion.php', 'usuarios.php', 'perfil.php']);
 ?>
     <!-- Mobile Bottom Navigation Bar with Protruding Center FAB (md:hidden) -->
-    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800/90 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] dark:shadow-[0_-8px_30px_rgba(0,0,0,0.45)] pb-safe" aria-label="Navegación rápida móvil">
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-[0_-2px_10px_rgba(0,0,0,0.04)]" aria-label="Navegación rápida móvil">
         <div class="grid grid-cols-5 items-center h-16 max-w-md mx-auto px-1 relative">
             
             <!-- 1. Inicio -->

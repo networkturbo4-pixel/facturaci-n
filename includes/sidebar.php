@@ -29,7 +29,7 @@ function isNavActive($targets, $currentPage) {
             <!-- Light Mode Logo -->
             <span class="brand-logo-light items-center gap-3 min-w-0">
                 <?php if (!empty($logoClaro)): ?>
-                    <img src="<?php echo htmlspecialchars($logoClaro); ?>" alt="<?php echo htmlspecialchars($brand['empresa_nombre_comercial']); ?>" class="h-10 max-w-[155px] object-contain rounded-lg transition-transform duration-300 group-hover:scale-105">
+                    <img src="<?php echo htmlspecialchars($logoClaro); ?>" alt="<?php echo htmlspecialchars($brand['empresa_nombre_comercial']); ?>" class="h-11 max-w-[200px] object-contain object-left rounded-lg transition-transform duration-300 group-hover:scale-105">
                 <?php else: ?>
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-blue-500 p-0.5 shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform duration-300 shrink-0">
                         <div class="w-full h-full bg-white rounded-[10px] flex items-center justify-center">
@@ -42,7 +42,7 @@ function isNavActive($targets, $currentPage) {
             <!-- Dark Mode Logo -->
             <span class="brand-logo-dark items-center gap-3 min-w-0">
                 <?php if (!empty($logoOscuro)): ?>
-                    <img src="<?php echo htmlspecialchars($logoOscuro); ?>" alt="<?php echo htmlspecialchars($brand['empresa_nombre_comercial']); ?>" class="h-10 max-w-[155px] object-contain rounded-lg transition-transform duration-300 group-hover:scale-105">
+                    <img src="<?php echo htmlspecialchars($logoOscuro); ?>" alt="<?php echo htmlspecialchars($brand['empresa_nombre_comercial']); ?>" class="h-11 max-w-[200px] object-contain object-left rounded-lg transition-transform duration-300 group-hover:scale-105">
                 <?php else: ?>
                     <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-blue-500 p-0.5 shadow-lg shadow-brand-500/20 group-hover:scale-105 transition-transform duration-300 shrink-0">
                         <div class="w-full h-full bg-slate-950/80 rounded-[10px] flex items-center justify-center backdrop-blur-sm">
@@ -52,15 +52,13 @@ function isNavActive($targets, $currentPage) {
                 <?php endif; ?>
             </span>
 
-            <div class="truncate">
-                <div class="flex items-center gap-2">
+            <?php if (empty($logoClaro) && empty($logoOscuro)): ?>
+                <div class="truncate">
                     <span class="text-base font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-300 transition-colors truncate">
                         <?php echo htmlspecialchars($brand['empresa_nombre_comercial']); ?>
                     </span>
-                    <span class="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full bg-brand-500/10 text-brand-600 dark:text-brand-300 border border-brand-500/20 shrink-0">PRO</span>
                 </div>
-                <p class="text-[10px] text-slate-400 tracking-wide truncate">Enterprise Billing & CRM</p>
-            </div>
+            <?php endif; ?>
         </a>
         <button id="closeSidebarBtn" class="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
             <i class="fa-solid fa-xmark text-lg"></i>

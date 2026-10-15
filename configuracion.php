@@ -291,7 +291,7 @@ include 'includes/header.php';
     include 'includes/topbar.php';
     ?>
 
-    <div class="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 lg:p-8 space-y-5 sm:space-y-6">
+    <div class="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-6 lg:p-8 pb-28 sm:pb-12 space-y-5 sm:space-y-6">
         <div class="max-w-6xl w-full min-w-0 mx-auto space-y-5 sm:space-y-6">
 
             <!-- ===== HERO BANNER DE ESTADO DEL SISTEMA (RESPONSIVE OPTIMIZADO) ===== -->
@@ -512,7 +512,7 @@ include 'includes/header.php';
                                             <!-- Opción Claro -->
                                             <label class="cursor-pointer group">
                                                 <input type="radio" name="sistema_tema_default" value="light" class="peer sr-only" <?php echo ($temaDef === 'light') ? 'checked' : ''; ?> onchange="window.setAppTheme('light')">
-                                                <div class="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-brand-600 peer-checked:bg-brand-50/40 dark:peer-checked:bg-brand-500/10 transition-all hover:border-slate-300">
+                                                <div class="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-brand-600 peer-checked:bg-brand-50/40 dark:peer-checked:bg-brand-500/10 peer-checked:ring-2 peer-checked:ring-brand-500/20 transition-all hover:border-slate-300">
                                                     <div class="h-16 rounded-xl bg-slate-100 border border-slate-200 p-2.5 mb-3 flex items-center gap-2 keep-light">
                                                         <div class="w-8 h-full rounded-lg bg-white border border-slate-200 keep-light"></div>
                                                         <div class="flex-1 space-y-1.5">
@@ -524,7 +524,7 @@ include 'includes/header.php';
                                                         <span class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                                                             <i class="fa-solid fa-sun text-amber-500"></i> Modo Claro
                                                         </span>
-                                                        <span class="text-[10px] font-semibold text-brand-600">Usa Logo Claro</span>
+                                                        <span class="text-[10px] font-semibold text-brand-600 dark:text-brand-400">Usa Logo Claro</span>
                                                     </div>
                                                 </div>
                                             </label>
@@ -532,7 +532,7 @@ include 'includes/header.php';
                                             <!-- Opción Oscuro -->
                                             <label class="cursor-pointer group">
                                                 <input type="radio" name="sistema_tema_default" value="dark" class="peer sr-only" <?php echo ($temaDef === 'dark') ? 'checked' : ''; ?> onchange="window.setAppTheme('dark')">
-                                                <div class="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-brand-600 peer-checked:bg-brand-50/40 dark:peer-checked:bg-brand-500/10 transition-all hover:border-slate-300">
+                                                <div class="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-brand-600 peer-checked:bg-brand-50/40 dark:peer-checked:bg-brand-500/10 peer-checked:ring-2 peer-checked:ring-brand-500/20 transition-all hover:border-slate-300">
                                                     <div class="h-16 rounded-xl bg-slate-950 border border-slate-800 p-2.5 mb-3 flex items-center gap-2">
                                                         <div class="w-8 h-full rounded-lg bg-slate-900 border border-slate-800"></div>
                                                         <div class="flex-1 space-y-1.5">
@@ -544,7 +544,7 @@ include 'includes/header.php';
                                                         <span class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                                                             <i class="fa-solid fa-moon text-indigo-400"></i> Modo Oscuro
                                                         </span>
-                                                        <span class="text-[10px] font-semibold text-brand-600">Usa Logo Oscuro</span>
+                                                        <span class="text-[10px] font-semibold text-brand-600 dark:text-brand-400">Usa Logo Oscuro</span>
                                                     </div>
                                                 </div>
                                             </label>
@@ -552,17 +552,30 @@ include 'includes/header.php';
                                             <!-- Opción Sistema -->
                                             <label class="cursor-pointer group">
                                                 <input type="radio" name="sistema_tema_default" value="system" class="peer sr-only" <?php echo ($temaDef === 'system') ? 'checked' : ''; ?> onchange="window.setAppTheme('system')">
-                                                <div class="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-brand-600 peer-checked:bg-brand-50/40 dark:peer-checked:bg-brand-500/10 transition-all hover:border-slate-300">
-                                                    <div class="h-16 rounded-xl bg-gradient-to-r from-slate-100 via-slate-200 to-slate-950 border border-slate-300 dark:border-slate-700 p-2.5 mb-3 flex items-center justify-between">
-                                                        <i class="fa-solid fa-sun text-amber-500 text-lg ml-2"></i>
-                                                        <i class="fa-solid fa-arrows-Left-right text-slate-400 text-xs"></i>
-                                                        <i class="fa-solid fa-moon text-indigo-300 text-lg mr-2"></i>
+                                                <div class="p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-800 peer-checked:border-brand-600 peer-checked:bg-brand-50/40 dark:peer-checked:bg-brand-500/10 peer-checked:ring-2 peer-checked:ring-brand-500/20 transition-all hover:border-slate-300">
+                                                    <div class="h-16 rounded-xl border border-slate-200 dark:border-slate-800 mb-3 flex overflow-hidden">
+                                                        <!-- Mitad Claro -->
+                                                        <div class="w-1/2 bg-slate-100 p-2 flex items-center gap-1.5 border-r border-slate-200 dark:border-slate-800 keep-light">
+                                                            <div class="w-4 h-full rounded bg-white border border-slate-200 keep-light"></div>
+                                                            <div class="flex-1 space-y-1">
+                                                                <div class="h-2 w-full rounded bg-slate-300"></div>
+                                                                <div class="h-1.5 w-2/3 rounded bg-amber-500"></div>
+                                                            </div>
+                                                        </div>
+                                                        <!-- Mitad Oscuro -->
+                                                        <div class="w-1/2 bg-slate-950 p-2 flex items-center gap-1.5">
+                                                            <div class="w-4 h-full rounded bg-slate-900 border border-slate-800"></div>
+                                                            <div class="flex-1 space-y-1">
+                                                                <div class="h-2 w-full rounded bg-slate-700"></div>
+                                                                <div class="h-1.5 w-2/3 rounded bg-indigo-400"></div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                     <div class="flex items-center justify-between">
                                                         <span class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                                                             <i class="fa-solid fa-desktop text-cyan-500"></i> Automático (SO)
                                                         </span>
-                                                        <span class="text-[10px] font-semibold text-brand-600">Adaptativo</span>
+                                                        <span class="text-[10px] font-semibold text-brand-600 dark:text-brand-400">Adaptativo</span>
                                                     </div>
                                                 </div>
                                             </label>
