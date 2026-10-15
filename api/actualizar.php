@@ -22,53 +22,115 @@ require_once __DIR__ . '/../includes/migrator.php';
 
 $action = $_POST['action'] ?? $_GET['action'] ?? 'status';
 
-function runGitCommand($cmd, $workingDir) {
+function getGitBinary() {
+    static $bin = null;
+    if ($bin !== null) return $bin;
+    $common = [
+        'C:\\Program Files\\Git\\cmd\\git.exe',
+        'C:\\Program Files\\Git\\bin\\git.exe',
+        'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+        'C:\\Git\\bin\\git.exe',
+        '/usr/bin/git',
+        '/usr/local/bin/git'
+    ];
+    foreach ($common as $p) {
+        if (file_exists($p)) {
+            $bin = '"' . $p . '"';
+            return $bin;
+        }
+    }
+    $bin = 'git';
+    return $bin;
+}
+
+function getRepoDirectory() {
+    static $dir = null;
+    if ($dir !== null) return $dir;
+    $d = dirname(__DIR__);
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        $short = @shell_exec('cmd /c for %I in ("' . $d . '") do @echo %~fsI');
+        if (!empty($short) && file_exists(trim($short))) {
+            $dir = trim($short);
+            return $dir;
+        }
+    }
+    $real = realpath($d);
+    $dir = $real ?: $d;
+    return $dir;
+}
+
+function runGitCommand($gitSubcmd, $workingDir = null) {
+    $workingDir = $workingDir ?: getRepoDirectory();
+    $gitBin = getGitBinary();
+    $sub = (strpos(trim($gitSubcmd), 'git ') === 0) ? substr(trim($gitSubcmd), 4) : trim($gitSubcmd);
+    
+    $cmd = "{$gitBin} -c safe.directory=* -c core.quotepath=false -C \"{$workingDir}\" {$sub}";
     $descriptor = [
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w']
     ];
     $process = proc_open($cmd, $descriptor, $pipes, $workingDir);
     if (!is_resource($process)) {
-        return ['output' => 'Error al iniciar proceso', 'code' => -1];
+        return ['output' => 'Error al iniciar proceso Git', 'code' => -1];
     }
     $stdout = stream_get_contents($pipes[1]);
     $stderr = stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
     $code = proc_close($process);
-    return [
-        'output' => trim($stdout . ($stderr ? "\n" . $stderr : '')),
-        'code' => $code
-    ];
+    
+    $out = trim($stdout);
+    if ($stderr && $code !== 0) {
+        $out = trim($out . "\n" . trim($stderr));
+    } elseif ($stderr && empty($out)) {
+        $out = trim($stderr);
+    }
+    return ['output' => $out, 'code' => $code];
 }
 
-$repoDir = realpath(__DIR__ . '/..');
+function isGitRepository($repoDir) {
+    if (file_exists($repoDir . '/.git') || is_dir($repoDir . '/.git')) {
+        return true;
+    }
+    $test = runGitCommand('rev-parse --is-inside-work-tree', $repoDir);
+    return trim($test['output']) === 'true';
+}
+
+function ensureGitRepository($repoDir, $remoteUrl = 'https://github.com/networkturbo4-pixel/facturaci-n.git') {
+    if (isGitRepository($repoDir)) {
+        return true;
+    }
+    runGitCommand('init', $repoDir);
+    runGitCommand('config core.autocrlf true', $repoDir);
+    runGitCommand("remote add origin {$remoteUrl}", $repoDir);
+    runGitCommand('fetch origin main', $repoDir);
+    runGitCommand('branch -M main', $repoDir);
+    return isGitRepository($repoDir);
+}
+
+$repoDir = getRepoDirectory();
 
 switch ($action) {
     case 'status':
         $migrationStatus = Migrator::getStatus($conn);
 
-        // Información de Git
-        $gitInstalled = false;
-        $isGitRepo = is_dir($repoDir . '/.git');
+        // Información de Git con auto-detección y safe.directory
+        $gitVer = runGitCommand('version', $repoDir);
+        $gitInstalled = ($gitVer['code'] === 0);
+        $isGitRepo = isGitRepository($repoDir);
         $currentBranch = 'desconocido';
         $currentCommit = '';
         $remoteUrl = '';
 
-        if ($isGitRepo) {
-            $gitVer = runGitCommand('git --version', $repoDir);
-            $gitInstalled = ($gitVer['code'] === 0);
+        if ($isGitRepo && $gitInstalled) {
+            $branchRes = runGitCommand('branch --show-current', $repoDir);
+            $currentBranch = $branchRes['output'] ?: 'main';
 
-            if ($gitInstalled) {
-                $branchRes = runGitCommand('git branch --show-current', $repoDir);
-                $currentBranch = $branchRes['output'] ?: 'main';
+            $commitRes = runGitCommand('rev-parse --short HEAD', $repoDir);
+            $currentCommit = $commitRes['output'];
 
-                $commitRes = runGitCommand('git rev-parse --short HEAD', $repoDir);
-                $currentCommit = $commitRes['output'];
-
-                $remoteRes = runGitCommand('git config --get remote.origin.url', $repoDir);
-                $remoteUrl = $remoteRes['output'];
-            }
+            $remoteRes = runGitCommand('config --get remote.origin.url', $repoDir);
+            $remoteUrl = $remoteRes['output'];
         }
 
         // Historial de actualizaciones recientes
@@ -91,25 +153,26 @@ switch ($action) {
         break;
 
     case 'check':
-        // Comprobar si hay nuevos commits en el repositorio remoto
-        if (!is_dir($repoDir . '/.git')) {
+        // Asegurar inicialización y conexión con el repositorio remoto
+        ensureGitRepository($repoDir);
+        if (!isGitRepository($repoDir)) {
             echo json_encode([
                 'success' => false,
-                'message' => 'El directorio actual no está inicializado como repositorio Git.'
+                'message' => 'El directorio actual no pudo conectarse con Git.'
             ]);
             exit;
         }
 
-        $fetchRes = runGitCommand('git fetch origin main', $repoDir);
-        $localCommit = runGitCommand('git rev-parse HEAD', $repoDir)['output'];
-        $remoteCommit = runGitCommand('git rev-parse origin/main', $repoDir)['output'];
+        $fetchRes = runGitCommand('fetch origin main', $repoDir);
+        $localCommit = runGitCommand('rev-parse HEAD', $repoDir)['output'];
+        $remoteCommit = runGitCommand('rev-parse origin/main', $repoDir)['output'];
 
         $hasUpdates = false;
         $commitsBehind = [];
 
         if (!empty($remoteCommit) && $localCommit !== $remoteCommit) {
             $hasUpdates = true;
-            $logRes = runGitCommand('git log HEAD..origin/main --oneline -n 10', $repoDir);
+            $logRes = runGitCommand('log HEAD..origin/main --oneline -n 10', $repoDir);
             if (!empty($logRes['output'])) {
                 $commitsBehind = explode("\n", $logRes['output']);
             }
@@ -144,7 +207,8 @@ switch ($action) {
 
         // 2. Ejecutar Git Pull
         $logs[] = '[2/4] Conectando con el repositorio y descargando archivos nuevos...';
-        if (!is_dir($repoDir . '/.git')) {
+        ensureGitRepository($repoDir);
+        if (!isGitRepository($repoDir)) {
             echo json_encode([
                 'success' => false,
                 'logs' => $logs,
@@ -153,14 +217,14 @@ switch ($action) {
             exit;
         }
 
-        $pullRes = runGitCommand('git pull origin main', $repoDir);
+        $pullRes = runGitCommand('pull origin main', $repoDir);
         $logs[] = ' ✓ Git Pull: ' . ($pullRes['output'] ?: 'Archivos sincronizados.');
 
         if ($pullRes['code'] !== 0 && strpos($pullRes['output'], 'Already up to date') === false) {
             // Intentar con git stash si había algún cambio accidental en archivo rastreado
             $logs[] = ' ! Hubo una advertencia en Git Pull. Intentando resolución segura...';
-            runGitCommand('git stash', $repoDir);
-            $retryPull = runGitCommand('git pull origin main', $repoDir);
+            runGitCommand('stash', $repoDir);
+            $retryPull = runGitCommand('pull origin main', $repoDir);
             $logs[] = ' ✓ Reintento de sincronización: ' . $retryPull['output'];
         }
 
@@ -179,7 +243,7 @@ switch ($action) {
 
         // 4. Registrar en historial de actualizaciones
         $logs[] = '[4/4] Finalizando y registrando actualización...';
-        $newCommit = runGitCommand('git rev-parse --short HEAD', $repoDir)['output'];
+        $newCommit = runGitCommand('rev-parse --short HEAD', $repoDir)['output'];
         try {
             $stmtIns = $conn->prepare("INSERT INTO sistema_actualizaciones (version, commit_hash, descripcion, estado, detalles, ejecutado_por) VALUES (?, ?, ?, ?, ?, ?)");
             $stmtIns->execute([
