@@ -36,6 +36,7 @@ uploads/branding/*
 # Archivos de sistema / Logs / Binarios
 composer.phar
 *.log
+*.zip
 .DS_Store
 Thumbs.db
 desktop.ini

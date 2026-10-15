@@ -59,7 +59,21 @@ try {
         }
     } else {
         error_log("FACTUSYS DB Connection Error: " . $e->getMessage());
-        die("Error de conexión a la base de datos. Verifique sus credenciales en <code>includes/db.config.php</code> o variables de entorno.");
+        $currentScript = basename($_SERVER['PHP_SELF'] ?? '');
+        if ($currentScript !== 'install.php') {
+            if (!headers_sent()) {
+                header("Location: install.php");
+                exit;
+            } else {
+                echo '<script>window.location.href="install.php";</script>';
+                echo '<p style="font-family:sans-serif;text-align:center;padding:40px;">'
+                    . 'No se pudo conectar a la base de datos.<br><br>'
+                    . '<a href="install.php" style="background:#4f46e5;color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-weight:bold;">Abrir Asistente de Instalación</a>'
+                    . '</p>';
+                exit;
+            }
+        }
+        throw $e;
     }
 }
 ?>
