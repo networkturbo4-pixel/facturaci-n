@@ -429,6 +429,7 @@ switch ($action) {
             $entryName = str_replace('\\', '/', $stat['name']);
             if (str_ends_with($entryName, '/')) continue;
             if ($entryName === 'includes/db.config.php') continue;
+            if ($entryName === '.htaccess' || $entryName === '.env') continue;
             if (str_starts_with($entryName, 'uploads/')) continue;
 
             $targetPath = $repoDir . '/' . $entryName;

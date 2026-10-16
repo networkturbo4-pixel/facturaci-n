@@ -31,6 +31,8 @@ foreach ($iterator as $item) {
     // Exclusiones críticas
     if ($subPathNorm === 'factusys_actualizacion_latest.zip') continue;
     if ($subPathNorm === 'includes/db.config.php') continue;
+    // No pisar configuración propia del servidor (handler PHP de cPanel, variables de entorno)
+    if ($subPathNorm === '.htaccess' || $subPathNorm === '.env') continue;
     
     $skip = false;
     foreach ($excludePrefixes as $ex) {
