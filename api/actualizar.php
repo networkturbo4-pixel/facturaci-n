@@ -219,7 +219,10 @@ switch ($action) {
             }
         }
 
-        $migrationStatus = Migrator::getStatus($conn);
+        // Reset OPcache if active so changes in PHP files are seen immediately
+        if (function_exists('opcache_reset')) {
+            @opcache_reset();
+        }
 
         echo json_encode([
             'success' => true,
@@ -231,7 +234,7 @@ switch ($action) {
             'pending_migrations' => $migrationStatus['pending_count'],
             'message' => $hasUpdates 
                 ? "¡Hay {$commitsBehindCount} nueva(s) actualización(es) disponibles en GitHub!" 
-                : 'Tu sistema ya está en la versión más reciente (Al día).'
+                : 'Tu sistema local ya cuenta con la versión más reciente (' . ($localCommit ? "#$localCommit" : 'Al día') . ').'
         ]);
         break;
 
@@ -283,8 +286,13 @@ switch ($action) {
             $logs[] = ' ⚠️ Error en migraciones: ' . ($migRes['error'] ?? 'desconocido');
         }
 
-        // 4. Registrar en historial de actualizaciones
-        $logs[] = '[4/4] Finalizando y registrando actualización...';
+        // 4. Registrar en historial de actualizaciones y limpiar OPcache
+        $logs[] = '[4/4] Purgando caché de bytecode PHP y registrando actualización...';
+        if (function_exists('opcache_reset')) {
+            @opcache_reset();
+            $logs[] = ' ✓ Memoria OPcache de PHP purgada con éxito.';
+        }
+
         $newCommit = runGitCommand('rev-parse --short HEAD', $repoDir)['output'];
         try {
             $stmtIns = $conn->prepare("INSERT INTO sistema_actualizaciones (version, commit_hash, descripcion, estado, detalles, ejecutado_por) VALUES (?, ?, ?, ?, ?, ?)");
@@ -298,7 +306,7 @@ switch ($action) {
             ]);
         } catch (Exception $e) {}
 
-        $logs[] = ' 🎉 ¡Actualización del sistema completada con éxito!';
+        $logs[] = ' 🎉 ¡Actualización y sincronización completada con éxito!';
 
         echo json_encode([
             'success' => true,

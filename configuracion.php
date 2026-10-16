@@ -2099,7 +2099,8 @@ async function comprobarActualizaciones() {
                 window.showToast('Hay una nueva versión disponible para descargar.', 'info', 'Actualización Disponible');
             } else {
                 const commitLabel = data.local_commit ? ` #${data.local_commit}` : '';
-                appendConsoleLog(`✓ Tu sistema está al día con la última versión${commitLabel}. No se requieren descargas.`, 'success');
+                appendConsoleLog(`✓ Tu sistema local ya cuenta con la versión más reciente${commitLabel} de GitHub. No se requieren descargas.`, 'success');
+                appendConsoleLog(`💡 Los cambios ya están en tus archivos locales. Si notas textos antiguos en el menú, presiona Ctrl+F5 o usa "Limpiar Caché PWA".`, 'info');
                 window.showToast('El sistema ya cuenta con la versión más reciente.', 'success', 'Sistema al Día');
             }
         } else {

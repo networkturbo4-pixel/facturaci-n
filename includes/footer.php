@@ -50,7 +50,7 @@ $isCfgActive   = in_array($currBottomPage, ['configuracion.php', 'usuarios.php',
     </nav>
 
     <!-- Global Scripts & App Interactions -->
-    <script src="js/main.js?v=3.4"></script>
+    <script src="js/main.js?v=3.5"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Sidebar Responsive Toggle
