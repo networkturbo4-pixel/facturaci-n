@@ -352,14 +352,7 @@ include 'includes/header.php';
                                 <?php endif; ?>
                             </div>
 
-                            <!-- Datalist de autocompletado para inputs de descripción -->
-                            <datalist id="catalogo_productos_list">
-                                <?php foreach ($productosCatalogo as $prod): ?>
-                                    <option value="<?php echo htmlspecialchars($prod['descripcion']); ?>" data-price="<?php echo number_format((float)$prod['precio_unitario'], 2, '.', ''); ?>">
-                                        <?php echo htmlspecialchars($prod['codigo'] . ' • S/ ' . number_format((float)$prod['precio_unitario'], 2)); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </datalist>
+
 
                             <!-- Tabla Responsiva de Ítems (Tabla en PC / Tarjetas 2-Columnas en Móvil sin scroll horizontal) -->
                             <div class="overflow-x-auto mb-4 rounded-xl border border-slate-200/80 dark:border-slate-800">
@@ -387,7 +380,37 @@ include 'includes/header.php';
                                                 </div>
                                             </td>
                                             <td class="px-3.5 py-3" data-label="Descripción" data-field="desc">
-                                                <input type="text" name="desc[]" list="catalogo_productos_list" placeholder="Escribe o selecciona del catálogo..." class="item-desc w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 dark:text-white focus:outline-none focus:border-brand-500" required>
+                                                <div class="product-dropdown-wrapper relative w-full">
+                                                    <div class="relative flex items-center">
+                                                        <span class="absolute left-3 text-slate-400 dark:text-slate-500 pointer-events-none text-xs">
+                                                            <i class="fa-solid fa-magnifying-glass"></i>
+                                                        </span>
+                                                        <input type="text" name="desc[]" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-8 py-2 text-xs font-semibold text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" required>
+                                                        <button type="button" tabindex="-1" class="btn-toggle-dropdown absolute right-2 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-1.5 rounded-lg transition-transform" title="Ver catálogo">
+                                                            <i class="fa-solid fa-chevron-down text-[11px] transition-transform duration-200"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div class="product-dropdown-menu hidden absolute left-0 top-full mt-1.5 z-50 min-w-[320px] max-w-[460px] w-full bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
+                                                        <div class="px-3.5 py-2.5 bg-slate-50/90 dark:bg-slate-800/90 border-b border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between">
+                                                            <div class="flex items-center gap-2">
+                                                                <div class="w-5 h-5 rounded-md bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center text-[10px]">
+                                                                    <i class="fa-solid fa-boxes-stacked"></i>
+                                                                </div>
+                                                                <span class="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">Gestión de Ventas</span>
+                                                            </div>
+                                                            <span class="dropdown-counter text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-500/20 text-brand-600 dark:text-brand-300">
+                                                                <?php echo count($productosCatalogo); ?> ítems
+                                                            </span>
+                                                        </div>
+                                                        <div class="product-items-list max-h-60 overflow-y-auto p-1.5 space-y-1"></div>
+                                                        <div class="px-3 py-2 bg-slate-50/60 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                                                            <span><i class="fa-regular fa-keyboard mr-1"></i> Navega con ↑ ↓ y Enter</span>
+                                                            <a href="productos.php" target="_blank" class="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 font-semibold">
+                                                                <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> Catálogo
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td class="px-3.5 py-3" data-label="Valor Unit." data-field="input">
                                                 <input type="number" name="price[]" placeholder="0.00" min="0" step="0.01" class="item-price w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-right text-slate-800 dark:text-white focus:outline-none focus:border-brand-500" required>
@@ -483,7 +506,11 @@ include 'includes/header.php';
     </div>
 </main>
 
+<script src="js/product_dropdown.js?v=1.0"></script>
 <script>
+// Catálogo de productos para el componente desplegable moderno
+const catalogoProductos = <?php echo json_encode($productosCatalogo, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+
 // Mapa de precios del catálogo para autocompletar instantáneamente
 const PRODUCTOS_PRECIOS = {
 <?php foreach ($productosCatalogo as $prod): ?>
@@ -722,8 +749,38 @@ document.addEventListener('DOMContentLoaded', function() {
                     </button>
                 </div>
             </td>
-            <td class="px-3.5 py-3" data-label="Descripción" data-field="desc">
-                <input type="text" name="desc[]" list="catalogo_productos_list" placeholder="Escribe o selecciona del catálogo..." class="item-desc w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 dark:text-white focus:outline-none focus:border-brand-500" required>
+            <td class="px-3.5 py-3 align-top min-w-[280px]" data-label="Descripción" data-field="desc">
+                <div class="product-dropdown-wrapper relative w-full">
+                    <div class="relative flex items-center">
+                        <span class="absolute left-3 text-slate-400 dark:text-slate-500 pointer-events-none text-xs">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </span>
+                        <input type="text" name="desc[]" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-8 py-2 text-xs font-semibold text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" required>
+                        <button type="button" tabindex="-1" class="btn-toggle-dropdown absolute right-2 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-1.5 rounded-lg transition-transform" title="Ver catálogo">
+                            <i class="fa-solid fa-chevron-down text-[11px] transition-transform duration-200"></i>
+                        </button>
+                    </div>
+                    <div class="product-dropdown-menu hidden absolute left-0 top-full mt-1.5 z-50 min-w-[320px] max-w-[460px] w-full bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
+                        <div class="px-3.5 py-2.5 bg-slate-50/90 dark:bg-slate-800/90 border-b border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-5 h-5 rounded-md bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center text-[10px]">
+                                    <i class="fa-solid fa-boxes-stacked"></i>
+                                </div>
+                                <span class="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">Gestión de Ventas</span>
+                            </div>
+                            <span class="dropdown-counter text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-500/20 text-brand-600 dark:text-brand-300">
+                                ${catalogoProductos.length} ítems
+                            </span>
+                        </div>
+                        <div class="product-items-list max-h-60 overflow-y-auto p-1.5 space-y-1"></div>
+                        <div class="px-3 py-2 bg-slate-50/60 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                            <span><i class="fa-regular fa-keyboard mr-1"></i> Navega con ↑ ↓ y Enter</span>
+                            <a href="productos.php" target="_blank" class="text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1 font-semibold">
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> Catálogo
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </td>
             <td class="px-3.5 py-3" data-label="Valor Unit." data-field="input">
                 <input type="number" name="price[]" placeholder="0.00" min="0" step="0.01" class="item-price w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-right text-slate-800 dark:text-white focus:outline-none focus:border-brand-500" required>
@@ -737,8 +794,28 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         if (desc) tr.querySelector('.item-desc').value = desc;
         if (price !== '') tr.querySelector('.item-price').value = price;
+        initRowDropdown(tr);
         return tr;
     }
+
+    function initRowDropdown(rowElement) {
+        const wrapper = rowElement.querySelector('.product-dropdown-wrapper');
+        if (!wrapper) return;
+        attachProductDropdown(wrapper, catalogoProductos, function(product, row) {
+            const priceInput = row.querySelector('.item-price');
+            if (priceInput && product.precio_unitario !== undefined) {
+                priceInput.value = parseFloat(product.precio_unitario).toFixed(2);
+                priceInput.classList.add('ring-2', 'ring-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-500/20');
+                setTimeout(() => {
+                    priceInput.classList.remove('ring-2', 'ring-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-500/20');
+                }, 600);
+            }
+            calcularTotales();
+        });
+    }
+
+    // Inicializar filas existentes
+    tbody.querySelectorAll('.item-row').forEach(initRowDropdown);
 
     btnAddRow.addEventListener('click', function() {
         const tr = crearFilaHtml();

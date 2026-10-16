@@ -196,8 +196,8 @@ function isNavActive($targets, $currentPage) {
                 <?php $active = isNavActive('productos.php', $currentPage); ?>
                 <a href="productos.php" class="flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 <?php echo $active ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white font-semibold shadow-md shadow-brand-600/25' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900/90 font-medium'; ?>">
                     <div class="flex items-center gap-3">
-                        <i class="fa-solid fa-box-archive w-4 text-center text-sm <?php echo $active ? 'text-white' : 'text-emerald-500 dark:text-emerald-400'; ?>"></i>
-                        <span class="text-xs">Productos & Servicios</span>
+                        <i class="fa-solid fa-boxes-stacked w-4 text-center text-sm <?php echo $active ? 'text-white' : 'text-emerald-500 dark:text-emerald-400'; ?>"></i>
+                        <span class="text-xs">Gestión de Ventas</span>
                     </div>
                 </a>
             </div>

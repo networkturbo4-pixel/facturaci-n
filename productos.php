@@ -94,7 +94,7 @@ include 'includes/sidebar.php';
 
 <main class="flex-1 flex flex-col h-full bg-slate-50/70 overflow-hidden">
     <?php 
-    $pageTitle = 'Catálogo de Productos & Servicios';
+    $pageTitle = 'Gestión de Ventas';
     $topbarAction = [
         'label'   => 'Nuevo Producto / Servicio',
         'onclick' => "document.getElementById('modalNuevoProducto').classList.remove('hidden')",
