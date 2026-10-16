@@ -25,22 +25,38 @@ $action = $_POST['action'] ?? $_GET['action'] ?? 'status';
 function getGitBinary() {
     static $bin = null;
     if ($bin !== null) return $bin;
-    $common = [
-        'C:\\Program Files\\Git\\cmd\\git.exe',
-        'C:\\Program Files\\Git\\bin\\git.exe',
-        'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
-        'C:\\Git\\bin\\git.exe',
-        '/usr/bin/git',
-        '/usr/local/bin/git'
-    ];
-    foreach ($common as $p) {
-        if (file_exists($p)) {
-            $bin = '"' . $p . '"';
-            return $bin;
+    $isWin = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
+    if ($isWin) {
+        $common = [
+            'C:\\Program Files\\Git\\cmd\\git.exe',
+            'C:\\Program Files\\Git\\bin\\git.exe',
+            'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+            'C:\\Git\\bin\\git.exe'
+        ];
+        foreach ($common as $p) {
+            if (file_exists($p)) {
+                $bin = '"' . $p . '"';
+                return $bin;
+            }
         }
+        $bin = 'git';
+        return $bin;
+    } else {
+        $commonLinux = [
+            '/usr/bin/git',
+            '/usr/local/bin/git',
+            '/bin/git',
+            '/usr/local/cpanel/3rdparty/bin/git'
+        ];
+        foreach ($commonLinux as $p) {
+            if (file_exists($p) && is_executable($p)) {
+                $bin = $p;
+                return $bin;
+            }
+        }
+        $bin = 'git';
+        return $bin;
     }
-    $bin = 'git';
-    return $bin;
 }
 
 function getRepoDirectory() {
@@ -63,33 +79,46 @@ function getGitEnvironment() {
     static $env = null;
     if ($env !== null) return $env;
     
-    $userProfile = getenv('USERPROFILE');
-    if (!$userProfile || !file_exists($userProfile)) {
-        $users = glob('C:\\Users\\*', GLOB_ONLYDIR);
-        foreach ($users as $u) {
-            if (!in_array(basename($u), ['Public', 'Default', 'All Users', 'Default User']) && file_exists($u . '/.gitconfig')) {
-                $userProfile = $u;
-                break;
+    $isWin = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN');
+    if ($isWin) {
+        $userProfile = getenv('USERPROFILE');
+        if (!$userProfile || !file_exists($userProfile)) {
+            $users = glob('C:\\Users\\*', GLOB_ONLYDIR);
+            foreach ($users as $u) {
+                if (!in_array(basename($u), ['Public', 'Default', 'All Users', 'Default User']) && file_exists($u . '/.gitconfig')) {
+                    $userProfile = $u;
+                    break;
+                }
             }
         }
+        $userProfile = $userProfile ?: 'C:\\Users\\CESAR';
+        
+        $env = [
+            'PATH' => getenv('PATH') . ';C:\\Program Files\\Git\\cmd;C:\\Program Files\\Git\\bin',
+            'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
+            'USERPROFILE' => $userProfile,
+            'HOME' => $userProfile,
+            'HOMEDRIVE' => 'C:',
+            'HOMEPATH' => str_replace('C:', '', $userProfile),
+            'LOCALAPPDATA' => $userProfile . '\\AppData\\Local',
+            'APPDATA' => $userProfile . '\\AppData\\Roaming',
+            'GIT_TERMINAL_PROMPT' => '0'
+        ];
+    } else {
+        $home = getenv('HOME') ?: sys_get_temp_dir();
+        $env = [
+            'PATH' => (getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin') . ':/usr/local/cpanel/3rdparty/bin',
+            'HOME' => $home,
+            'GIT_TERMINAL_PROMPT' => '0'
+        ];
     }
-    $userProfile = $userProfile ?: 'C:\\Users\\CESAR';
-    
-    $env = [
-        'PATH' => getenv('PATH') . ';C:\\Program Files\\Git\\cmd;C:\\Program Files\\Git\\bin',
-        'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
-        'USERPROFILE' => $userProfile,
-        'HOME' => $userProfile,
-        'HOMEDRIVE' => 'C:',
-        'HOMEPATH' => str_replace('C:', '', $userProfile),
-        'LOCALAPPDATA' => $userProfile . '\\AppData\\Local',
-        'APPDATA' => $userProfile . '\\AppData\\Roaming',
-        'GIT_TERMINAL_PROMPT' => '0'
-    ];
     return $env;
 }
 
 function runGitCommand($gitSubcmd, $workingDir = null) {
+    if (!function_exists('proc_open')) {
+        return ['output' => 'La función proc_open está deshabilitada en este hosting.', 'code' => -99];
+    }
     $workingDir = $workingDir ?: getRepoDirectory();
     $gitBin = getGitBinary();
     $sub = (strpos(trim($gitSubcmd), 'git ') === 0) ? substr(trim($gitSubcmd), 4) : trim($gitSubcmd);
@@ -99,9 +128,9 @@ function runGitCommand($gitSubcmd, $workingDir = null) {
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w']
     ];
-    $process = proc_open($cmd, $descriptor, $pipes, $workingDir, getGitEnvironment());
+    $process = @proc_open($cmd, $descriptor, $pipes, $workingDir, getGitEnvironment());
     if (!is_resource($process)) {
-        return ['output' => 'Error al iniciar proceso Git', 'code' => -1];
+        return ['output' => 'Error al iniciar proceso Git (proc_open restringido o git inaccesible)', 'code' => -1];
     }
     $stdout = stream_get_contents($pipes[1]);
     $stderr = stream_get_contents($pipes[2]);
@@ -186,23 +215,71 @@ switch ($action) {
         break;
 
     case 'check':
-        // Asegurar inicialización y conexión con el repositorio remoto
+        // Obtener configuración de token de GitHub si existe
+        $ghToken = '';
+        try {
+            $stG = $conn->query("SELECT valor FROM configuracion WHERE clave = 'github_token' LIMIT 1");
+            $ghToken = trim($stG->fetchColumn() ?: '');
+        } catch (Exception $e) {}
+
+        $procEnabled = function_exists('proc_open');
+        $gitVer = runGitCommand('version', $repoDir);
+        $gitWorking = ($procEnabled && $gitVer['code'] === 0);
+
+        if (!$gitWorking) {
+            echo json_encode([
+                'success' => false,
+                'has_updates' => false,
+                'git_installed' => false,
+                'message' => 'Git CLI no está disponible o proc_open está deshabilitado en este hosting cPanel. Puedes actualizar subiendo directamente el paquete factusys_actualizacion_latest.zip con el botón "Subir Paquete ZIP" o vía Administrador de Archivos de cPanel.'
+            ]);
+            break;
+        }
+
         ensureGitRepository($repoDir);
         if (!isGitRepository($repoDir)) {
             echo json_encode([
                 'success' => false,
-                'message' => 'El directorio actual no pudo conectarse con Git.'
+                'has_updates' => false,
+                'message' => 'El directorio actual no cuenta con un repositorio Git (.git) inicializado.'
             ]);
-            exit;
+            break;
+        }
+
+        if ($ghToken) {
+            runGitCommand("config http.https://github.com/.extraheader \"AUTHORIZATION: bearer {$ghToken}\"", $repoDir);
         }
 
         // Fetch garantizando actualización de origin/main
         $fetchRes = runGitCommand('fetch origin main:refs/remotes/origin/main', $repoDir);
+        if ($fetchRes['code'] !== 0) {
+            $errText = trim($fetchRes['output']);
+            $isAuthErr = (stripos($errText, 'could not read Username') !== false || stripos($errText, 'Authentication failed') !== false);
+            echo json_encode([
+                'success' => false,
+                'has_updates' => false,
+                'git_error' => $errText,
+                'message' => $isAuthErr 
+                    ? 'Autenticación requerida para acceder al repositorio privado en GitHub. Configura tu Personal Access Token (PAT) de GitHub en los ajustes.'
+                    : 'Error al conectar con GitHub: ' . ($errText ?: 'No se pudo completar git fetch en el servidor.')
+            ]);
+            break;
+        }
+
         $localRes = runGitCommand('rev-parse --short HEAD', $repoDir);
         $localCommit = ($localRes['code'] === 0 && preg_match('/^[a-f0-9]{6,40}$/i', trim($localRes['output'] ?? ''))) ? trim($localRes['output']) : '';
 
         $remoteRes = runGitCommand('rev-parse --short origin/main', $repoDir);
         $remoteCommit = ($remoteRes['code'] === 0 && preg_match('/^[a-f0-9]{6,40}$/i', trim($remoteRes['output'] ?? ''))) ? trim($remoteRes['output']) : '';
+
+        if (empty($localCommit) && empty($remoteCommit)) {
+            echo json_encode([
+                'success' => false,
+                'has_updates' => false,
+                'message' => 'No se pudo leer el commit actual de la rama en el servidor.'
+            ]);
+            break;
+        }
 
         // Comprobar con precisión cuántos commits remotos faltan por descargar localmente
         $behindCheck = runGitCommand('rev-list --count HEAD..origin/main', $repoDir);
@@ -262,6 +339,15 @@ switch ($action) {
             exit;
         }
 
+        // Reutilizar token si está configurado
+        try {
+            $stG = $conn->query("SELECT valor FROM configuracion WHERE clave = 'github_token' LIMIT 1");
+            $ghToken = trim($stG->fetchColumn() ?: '');
+            if ($ghToken) {
+                runGitCommand("config http.https://github.com/.extraheader \"AUTHORIZATION: bearer {$ghToken}\"", $repoDir);
+            }
+        } catch (Exception $e) {}
+
         $pullRes = runGitCommand('pull origin main', $repoDir);
         $logs[] = ' ✓ Git Pull: ' . ($pullRes['output'] ?: 'Archivos sincronizados.');
 
@@ -314,6 +400,78 @@ switch ($action) {
             'new_commit' => $newCommit,
             'migrations_applied' => $migRes['count'] ?? 0,
             'message' => 'El sistema se actualizó correctamente desde el repositorio sin alterar datos existentes.'
+        ]);
+        break;
+
+    case 'upload_zip':
+        if (empty($_FILES['zip_file']['tmp_name'])) {
+            echo json_encode(['success' => false, 'message' => 'No se seleccionó ningún archivo ZIP.']);
+            exit;
+        }
+        $zipTmp = $_FILES['zip_file']['tmp_name'];
+        if (!class_exists('ZipArchive')) {
+            echo json_encode(['success' => false, 'message' => 'La extensión ZipArchive de PHP no está habilitada en el servidor.']);
+            exit;
+        }
+
+        $zip = new ZipArchive();
+        if ($zip->open($zipTmp) !== true) {
+            echo json_encode(['success' => false, 'message' => 'El archivo subido no es un archivo ZIP válido.']);
+            exit;
+        }
+
+        $localConfig = __DIR__ . '/../includes/db.config.php';
+        $dbConfigBackup = file_exists($localConfig) ? file_get_contents($localConfig) : null;
+
+        $extractedCount = 0;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $stat = $zip->statIndex($i);
+            $entryName = str_replace('\\', '/', $stat['name']);
+            if (str_ends_with($entryName, '/')) continue;
+            if ($entryName === 'includes/db.config.php') continue;
+            if (str_starts_with($entryName, 'uploads/')) continue;
+
+            $targetPath = $repoDir . '/' . $entryName;
+            $targetDir = dirname($targetPath);
+            if (!is_dir($targetDir)) {
+                @mkdir($targetDir, 0755, true);
+            }
+            $stream = $zip->getStream($stat['name']);
+            if ($stream) {
+                file_put_contents($targetPath, stream_get_contents($stream));
+                fclose($stream);
+                $extractedCount++;
+            }
+        }
+        $zip->close();
+
+        if ($dbConfigBackup !== null) {
+            file_put_contents($localConfig, $dbConfigBackup);
+        }
+
+        $migRes = Migrator::runMigrations($conn);
+
+        if (function_exists('opcache_reset')) {
+            @opcache_reset();
+        }
+
+        try {
+            $stmtIns = $conn->prepare("INSERT INTO sistema_actualizaciones (version, commit_hash, descripcion, estado, detalles, ejecutado_por) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmtIns->execute([
+                'v2.6.5',
+                'PAQUETE-ZIP',
+                "Actualización manual mediante paquete ZIP ({$extractedCount} archivos actualizados)",
+                'Exitoso',
+                "Archivos reemplazados: {$extractedCount}\nMigraciones BD: " . ($migRes['count'] ?? 0),
+                $user['nombre'] ?? 'Administrador'
+            ]);
+        } catch (Exception $e) {}
+
+        echo json_encode([
+            'success' => true,
+            'files_updated' => $extractedCount,
+            'migrations' => $migRes['count'] ?? 0,
+            'message' => "¡Actualización completada! Se actualizaron {$extractedCount} archivos y se aplicaron {$migRes['count']} migraciones de base de datos sin alterar configuraciones ni comprobantes existentes."
         ]);
         break;
 

@@ -181,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['guardar_configuracion
             }
 
             // Campos sensibles (contraseñas / tokens): solo actualizar si se enviaron
-            $camposSensibles = ['sunat_clave_sol', 'sunat_cert_password', 'facturalo_token', 'nubefact_token', 'api_token_documento'];
+            $camposSensibles = ['sunat_clave_sol', 'sunat_cert_password', 'facturalo_token', 'nubefact_token', 'api_token_documento', 'github_token'];
             foreach ($camposSensibles as $campoS) {
                 if (isset($_POST[$campoS]) && trim($_POST[$campoS]) !== '') {
                     $stmt->execute([$campoS, trim($_POST[$campoS])]);
@@ -1599,6 +1599,11 @@ include 'includes/header.php';
                                             <i class="fa-solid fa-database"></i>
                                             <span>Actualizar BD</span>
                                         </button>
+                                        <input type="file" id="inp_zip_update" accept=".zip" class="hidden" onchange="subirPaqueteZipActualizacion(this)">
+                                        <button type="button" onclick="document.getElementById('inp_zip_update').click()" id="btnUploadZip" class="px-3.5 py-2 rounded-xl bg-purple-50 dark:bg-purple-500/15 hover:bg-purple-100 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 text-xs font-bold transition-all flex items-center gap-2" title="Subir paquete de actualización en formato ZIP (Ideal para hostings cPanel)">
+                                            <i class="fa-solid fa-file-zipper text-purple-600"></i>
+                                            <span>Subir Paquete ZIP</span>
+                                        </button>
                                     </div>
                                 </div>
 
@@ -1631,6 +1636,30 @@ include 'includes/header.php';
                                             <span class="w-2 h-2 rounded-full bg-emerald-500" id="prod_health_dot"></span>
                                             <span class="font-semibold text-emerald-600 dark:text-emerald-400" id="prod_health_badge">Verificando...</span>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Configuración de Token GitHub y Compatibilidad cPanel -->
+                            <div class="app-card p-6 space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
+                                        <i class="fa-brands fa-github text-base"></i>
+                                    </div>
+                                    <div>
+                                        <h5 class="text-xs font-bold text-slate-900 dark:text-white">Token de Acceso GitHub (Para Servidores Web / cPanel)</h5>
+                                        <p class="text-[11px] text-slate-500">Permite que el servidor se conecte al repositorio privado en GitHub. Si tu hosting bloquea comandos Git, puedes usar el botón <b>Subir Paquete ZIP</b>.</p>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                                    <div class="md:col-span-2">
+                                        <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">GitHub Personal Access Token (PAT)</label>
+                                        <input type="password" name="github_token" value="" placeholder="<?php echo !empty($cfg['github_token']) ? '•••••••••••••••• (Token guardado - escribe para actualizar)' : 'ghp_... o github_pat_...'; ?>" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs rounded-xl p-2.5 font-mono">
+                                    </div>
+                                    <div>
+                                        <button type="submit" class="w-full px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                                            <i class="fa-solid fa-floppy-disk"></i> Guardar Token GitHub
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -2194,6 +2223,65 @@ async function ejecutarMigracionesBD() {
     } finally {
         btn.disabled = false;
         btn.innerHTML = origHtml;
+        cargarEstadoActualizaciones();
+    }
+}
+
+async function subirPaqueteZipActualizacion(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+        window.showToast('El archivo debe tener formato .zip', 'warning', 'Archivo Inválido');
+        return;
+    }
+
+    const ok = await window.showConfirm({
+        title: 'Instalar Actualización desde Paquete ZIP',
+        message: `¿Deseas instalar el paquete "${file.name}"? Los archivos del sistema serán actualizados de forma segura sin alterar tus datos ni credenciales.`,
+        confirmText: 'Sí, Instalar Paquete',
+        variant: 'primary'
+    });
+    if (!ok) {
+        input.value = '';
+        return;
+    }
+
+    const btn = document.getElementById('btnUploadZip');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Instalando...</span>';
+    }
+
+    appendConsoleLog(`Subiendo y aplicando paquete ZIP: ${file.name} (${(file.size / (1024*1024)).toFixed(2)} MB)...`, 'info');
+
+    const formData = new FormData();
+    formData.append('action', 'upload_zip');
+    formData.append('zip_file', file);
+
+    try {
+        const resp = await fetch('api/actualizar.php', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await resp.json();
+        if (data.success) {
+            appendConsoleLog(`✓ ${data.message}`, 'success');
+            window.showToast(data.message, 'success', 'Actualización Exitosa');
+            setTimeout(() => window.location.reload(), 2500);
+        } else {
+            appendConsoleLog(`❌ Error: ${data.message}`, 'error');
+            window.showToast(data.message, 'error', 'Error');
+        }
+    } catch (e) {
+        appendConsoleLog(`❌ Error al subir ZIP: ${e.message}`, 'error');
+        window.showToast(e.message, 'error', 'Error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+        input.value = '';
         cargarEstadoActualizaciones();
     }
 }
