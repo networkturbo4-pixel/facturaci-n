@@ -54,6 +54,19 @@ $cdr_color   = match($cdr_estado) {
     'Rechazado' => '#dc2626',
     default     => '#d97706'
 };
+
+require_once 'vendor/autoload.php';
+$qrContent = trim($c['sunat_qr'] ?? '');
+$qrSvg = '';
+if (!empty($qrContent)) {
+    try {
+        $renderer = new \Greenter\Report\Render\QrRender();
+        $rawSvg = $renderer->getQrUrl($qrContent);
+        $qrSvg = trim(preg_replace('/<\?xml[^>]*\?>/i', '', $rawSvg));
+    } catch (\Throwable $t) {
+        $qrSvg = '';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -359,14 +372,18 @@ $cdr_color   = match($cdr_estado) {
     <hr class="divider">
     <div class="footer-doc">
         <div class="qr-section">
-            <?php if ($c['sunat_qr']): ?>
-            <img src="<?php echo htmlspecialchars($c['sunat_qr']); ?>" alt="QR SUNAT" onerror="this.style.display='none'">
+            <?php if (!empty($qrSvg)): ?>
+            <div style="width:75px;height:75px;display:flex;align-items:center;justify-content:center;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px;">
+                <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+                    <?php echo $qrSvg; ?>
+                </div>
+            </div>
             <?php else: ?>
-            <div style="width:70px;height:70px;background:#f1f5f9;border:1.5px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;">
+            <div style="width:75px;height:75px;background:#f1f5f9;border:1.5px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;">
                 <i class="fa-solid fa-qrcode" style="font-size:28px;color:#94a3b8;"></i>
             </div>
             <?php endif; ?>
-            <p>Verificar en SUNAT</p>
+            <p style="font-size:8px;font-weight:700;color:#64748b;margin-top:4px;">QR OFICIAL SUNAT</p>
         </div>
 
         <div style="text-align:center; flex:1; font-size:9px; color:#64748b; line-height:1.7;">

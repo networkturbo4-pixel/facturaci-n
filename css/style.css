@@ -368,7 +368,8 @@ input:focus, select:focus, textarea:focus {
 
     /* Eliminate uncomfortable horizontal scrolling ONLY on mobile table wrappers */
     .responsive-table-wrap,
-    main .overflow-x-auto:has(> table) {
+    main .overflow-x-auto:has(> table),
+    main .overflow-visible:has(> table) {
         overflow-x: visible !important;
         border: none !important;
     }

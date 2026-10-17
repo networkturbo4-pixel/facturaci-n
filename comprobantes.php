@@ -145,16 +145,70 @@ include 'includes/sidebar.php';
                                 </td>
                                 <td class="px-6 py-4 text-right">
                                     <div class="flex items-center justify-end gap-1.5">
-                                        <?php $linkComp = !empty($c['token_publico']) ? 'comprobante_publico.php?token=' . urlencode($c['token_publico']) : 'comprobante_publico.php?id=' . $c['id']; ?>
-                                        <a href="<?php echo $linkComp; ?>" target="_blank" class="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors" title="Ver Comprobante">
+                                        <?php 
+                                            $linkComp = !empty($c['token_publico']) 
+                                                ? 'comprobante_publico.php?token=' . urlencode($c['token_publico']) 
+                                                : 'comprobante_publico.php?id=' . $c['id'];
+                                            $linkCompPrint = $linkComp . (str_contains($linkComp, '?') ? '&print=1' : '?print=1');
+                                            $simboloComp = (($c['moneda'] ?? 'PEN') === 'USD') ? '$' : 'S/';
+                                            $numeroDoc = $c['serie'] . '-' . str_pad((string)$c['correlativo'], 6, '0', STR_PAD_LEFT);
+                                            $compJson = htmlspecialchars(json_encode([
+                                                'id'        => $c['id'],
+                                                'numero'    => $numeroDoc,
+                                                'tipo'      => $c['tipo_comprobante'],
+                                                'cliente'   => $c['cliente_razon_social'],
+                                                'documento' => $c['cliente_documento'],
+                                                'total'     => number_format((float)$c['total'], 2),
+                                                'moneda'    => $simboloComp,
+                                                'url'       => $linkComp
+                                            ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                                        ?>
+
+                                        <!-- Ver Vista Pública -->
+                                        <a href="<?php echo $linkComp; ?>" 
+                                           target="_blank" 
+                                           class="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           title="Ver vista pública">
                                             <i class="fa-solid fa-eye text-xs"></i>
                                         </a>
-                                        <a href="<?php echo $linkComp; ?>" target="_blank" class="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Enlace Seguro Cliente">
+
+                                        <!-- Compartir Vista Pública -->
+                                        <button type="button" 
+                                                onclick='abrirCompartirComprobante(<?php echo $compJson; ?>)' 
+                                                class="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                                title="Compartir vista pública">
                                             <i class="fa-solid fa-share-nodes text-xs"></i>
+                                        </button>
+
+                                        <!-- Imprimir / PDF -->
+                                        <a href="<?php echo $linkCompPrint; ?>" 
+                                           target="_blank" 
+                                           class="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           title="Imprimir / PDF">
+                                            <i class="fa-solid fa-print text-xs"></i>
                                         </a>
-                                        <a href="<?php echo $linkComp; ?>" target="_blank" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Imprimir / PDF">
-                                            <i class="fa-solid fa-file-pdf text-xs"></i>
+
+                                        <!-- Descargar XML (si existe) -->
+                                        <?php if (!empty($c['sunat_enlace_xml'])): ?>
+                                        <a href="<?php echo htmlspecialchars($c['sunat_enlace_xml']); ?>" 
+                                           target="_blank" 
+                                           download 
+                                           class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           title="Descargar XML">
+                                            <i class="fa-solid fa-code text-xs"></i>
                                         </a>
+                                        <?php endif; ?>
+
+                                        <!-- Descargar CDR (si existe) -->
+                                        <?php if (!empty($c['sunat_enlace_cdr'])): ?>
+                                        <a href="<?php echo htmlspecialchars($c['sunat_enlace_cdr']); ?>" 
+                                           target="_blank" 
+                                           download 
+                                           class="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           title="Descargar CDR">
+                                            <i class="fa-solid fa-file-zipper text-xs"></i>
+                                        </a>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -173,6 +227,72 @@ include 'includes/sidebar.php';
     </div>
 </main>
 
+<!-- Modal: Compartir Comprobante de Pago -->
+<div id="modalCompartirComprobante" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 dark:border-slate-800 animate-fade-in">
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-sm">
+                    <i class="fa-solid fa-share-nodes"></i>
+                </div>
+                <div>
+                    <h3 class="font-extrabold text-slate-900 dark:text-white text-sm">Compartir Comprobante</h3>
+                    <p class="text-[11px] text-slate-400">Enlace seguro de visualización electrónica</p>
+                </div>
+            </div>
+            <button type="button" onclick="cerrarCompartirComprobante()" class="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4">
+            <!-- Tarjeta Resumen del Comprobante -->
+            <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span id="share_comp_tipo" class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200">Factura Electrónica</span>
+                    <span id="share_comp_numero" class="font-mono font-bold text-xs text-slate-800 dark:text-slate-200">F001-000001</span>
+                </div>
+                <div class="text-xs">
+                    <div class="text-slate-400 text-[11px]">Cliente / Razón Social:</div>
+                    <div id="share_comp_cliente" class="font-bold text-slate-900 dark:text-white truncate">Cliente SAC</div>
+                    <div id="share_comp_doc" class="text-[11px] text-slate-500 font-mono">20000000001</div>
+                </div>
+                <div class="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                    <span class="text-xs text-slate-500">Total Comprobante:</span>
+                    <span id="share_comp_total" class="font-mono font-extrabold text-sm text-slate-900 dark:text-white">S/ 0.00</span>
+                </div>
+            </div>
+
+            <!-- Input con el Enlace y Botón Copiar -->
+            <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Enlace de visualización e impresión</label>
+                <div class="flex items-center gap-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="share_comp_url" readonly class="w-full text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-600 dark:text-slate-300 font-mono select-all focus:outline-none" value="">
+                    </div>
+                    <button type="button" onclick="copiarEnlaceModalComprobante()" id="btn_copiar_comp_modal" class="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-sm">
+                        <i class="fa-solid fa-copy"></i>
+                        <span id="btn_copiar_comp_modal_txt">Copiar</span>
+                    </button>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">Cualquier persona con este enlace podrá ver e imprimir el comprobante con su QR oficial SUNAT.</p>
+            </div>
+
+            <!-- Botones de Acción Rápida -->
+            <div class="pt-2 flex flex-col gap-2">
+                <a id="btn_whatsapp_comp" href="#" target="_blank" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm shadow-emerald-500/20">
+                    <i class="fa-brands fa-whatsapp text-sm"></i>
+                    <span>Enviar por WhatsApp</span>
+                </a>
+                <a id="btn_ver_publico_comp" href="#" target="_blank" class="w-full py-2.5 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-arrow-up-right-from-square text-[11px]"></i>
+                    <span>Abrir en nueva pestaña</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 // Filtro en tiempo real de comprobantes
 document.getElementById('searchComprobantes')?.addEventListener('input', function(e) {
@@ -182,6 +302,69 @@ document.getElementById('searchComprobantes')?.addEventListener('input', functio
         const text = row.textContent.toLowerCase();
         row.style.display = text.includes(q) ? '' : 'none';
     });
+});
+
+function abrirCompartirComprobante(data) {
+    const origin = window.location.origin;
+    const path = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+    const fullUrl = origin + path + data.url;
+
+    document.getElementById('share_comp_tipo').textContent = data.tipo || 'Comprobante Electrónico';
+    document.getElementById('share_comp_numero').textContent = data.numero;
+    document.getElementById('share_comp_cliente').textContent = data.cliente;
+    document.getElementById('share_comp_doc').textContent = data.documento;
+    document.getElementById('share_comp_total').textContent = data.moneda + ' ' + data.total;
+    document.getElementById('share_comp_url').value = fullUrl;
+    document.getElementById('btn_ver_publico_comp').href = fullUrl;
+
+    const textoWsp = encodeURIComponent(`Estimado(a) *${data.cliente}*, le compartimos el enlace oficial para consultar su comprobante electrónico *${data.tipo} ${data.numero}* por un total de *${data.moneda} ${data.total}*:\n${fullUrl}\n\nGracias por su preferencia.`);
+    document.getElementById('btn_whatsapp_comp').href = `https://api.whatsapp.com/send?text=${textoWsp}`;
+
+    const btn = document.getElementById('btn_copiar_comp_modal');
+    const txt = document.getElementById('btn_copiar_comp_modal_txt');
+    txt.textContent = 'Copiar';
+    btn.classList.remove('bg-emerald-600');
+
+    // Auto-copiar al portapapeles al pulsar el botón de compartir
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(fullUrl).then(() => {
+            if (window.showToast) {
+                window.showToast('Enlace de ' + data.numero + ' copiado al portapapeles.', 'success', 'Enlace Copiado');
+            }
+        }).catch(() => {});
+    }
+
+    document.getElementById('modalCompartirComprobante').classList.remove('hidden');
+}
+
+function cerrarCompartirComprobante() {
+    document.getElementById('modalCompartirComprobante').classList.add('hidden');
+}
+
+function copiarEnlaceModalComprobante() {
+    const inp = document.getElementById('share_comp_url');
+    inp.select();
+    inp.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(inp.value).then(() => {
+        const txt = document.getElementById('btn_copiar_comp_modal_txt');
+        const btn = document.getElementById('btn_copiar_comp_modal');
+        txt.textContent = '¡Copiado!';
+        btn.classList.add('bg-emerald-600');
+        if (window.showToast) {
+            window.showToast('Enlace copiado al portapapeles.', 'success');
+        }
+        setTimeout(() => {
+            txt.textContent = 'Copiar';
+            btn.classList.remove('bg-emerald-600');
+        }, 2000);
+    }).catch(() => {});
+}
+
+// Cerrar modal al hacer clic en el backdrop
+document.getElementById('modalCompartirComprobante')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        cerrarCompartirComprobante();
+    }
 });
 
 async function sincronizarPendientes() {

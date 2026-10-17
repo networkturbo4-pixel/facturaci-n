@@ -41,8 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $maxId = (int)$stmtCorr->fetchColumn();
                 $numero = 'COT-' . str_pad($maxId + 1, 5, '0', STR_PAD_LEFT);
 
-                $stmt = $conn->prepare("INSERT INTO proformas (numero, cliente_documento, cliente_razon_social, cliente_direccion, fecha_emision, validez_dias, moneda, subtotal, igv, total, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')");
-                $stmt->execute([$numero, $doc, $razon, $dir, $fecha, $validez, $moneda, $subtotal, $igv, $total]);
+                $token_publico = bin2hex(random_bytes(20));
+                $stmt = $conn->prepare("INSERT INTO proformas (numero, token_publico, cliente_documento, cliente_razon_social, cliente_direccion, fecha_emision, validez_dias, moneda, subtotal, igv, total, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pendiente')");
+                $stmt->execute([$numero, $token_publico, $doc, $razon, $dir, $fecha, $validez, $moneda, $subtotal, $igv, $total]);
                 $proforma_id = $conn->lastInsertId();
 
                 // Guardar líneas
@@ -316,7 +317,7 @@ include 'includes/sidebar.php';
     </div>
 </main>
 
-<script src="js/product_dropdown.js?v=1.0"></script>
+<script src="js/product_dropdown.js?v=<?php echo time(); ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const catalogoProductos = <?php echo json_encode($productos, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;

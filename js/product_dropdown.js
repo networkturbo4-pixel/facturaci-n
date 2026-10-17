@@ -64,6 +64,7 @@
 
         let activeIndex = -1;
         let currentFiltered = [];
+        let isSelecting = false;
 
         function renderList(query = '') {
             const normQ = normalizeText(query);
@@ -170,6 +171,36 @@
             activeIndex = idx;
         }
 
+        function updatePosition() {
+            if (menu.classList.contains('hidden')) return;
+            const rect = input.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) return;
+
+            const dropdownHeight = 280;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const menuWidth = Math.max(rect.width, 360);
+
+            menu.style.position = 'fixed';
+            menu.style.zIndex = '999999';
+            menu.style.width = menuWidth + 'px';
+            menu.style.maxWidth = 'min(500px, 92vw)';
+
+            let leftPos = rect.left;
+            if (leftPos + menuWidth > window.innerWidth - 12) {
+                leftPos = window.innerWidth - menuWidth - 12;
+            }
+            if (leftPos < 12) leftPos = 12;
+            menu.style.left = leftPos + 'px';
+
+            if (spaceBelow < dropdownHeight && rect.top > dropdownHeight) {
+                menu.style.top = 'auto';
+                menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+            } else {
+                menu.style.bottom = 'auto';
+                menu.style.top = (rect.bottom + 6) + 'px';
+            }
+        }
+
         function openDropdown() {
             // Cerrar otros dropdowns abiertos
             document.querySelectorAll('.product-dropdown-menu:not(.hidden)').forEach(d => {
@@ -181,6 +212,8 @@
 
             renderList(input.value);
             menu.classList.remove('hidden');
+            updatePosition();
+
             if (toggleBtn) {
                 const icon = toggleBtn.querySelector('i');
                 if (icon) icon.classList.add('rotate-180');
@@ -196,25 +229,60 @@
             }
         }
 
+        window.addEventListener('scroll', updatePosition, true);
+        window.addEventListener('resize', updatePosition);
+
         function selectItem(item) {
+            isSelecting = true;
             input.value = item.descripcion;
+            input.dataset.selectedCode = item.codigo || '';
+
+            // Cerrar inmediatamente el desplegable para que no siga visible
             closeDropdown();
 
             if (typeof onSelect === 'function') {
                 onSelect(item, row);
             }
 
-            // Disparar evento nativo 'change' e 'input' para los listeners de la fila
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+            // Disparar evento nativo 'change' e 'input' con detalle especial para no reabrir
+            input.dispatchEvent(new CustomEvent('input', { bubbles: true, detail: { fromSelect: true } }));
+            input.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { fromSelect: true } }));
+
+            // Desenfocar el campo para confirmar que la selección finalizó y no reabrirlo
+            input.blur();
+
+            setTimeout(() => {
+                isSelecting = false;
+            }, 150);
         }
 
         // Eventos
+        // 1. Al recibir foco: si ya tiene producto ingresado, NO abrir automáticamente
         input.addEventListener('focus', function () {
+            if (isSelecting) return;
+            if (this.value.trim() !== '') {
+                // Producto ya puesto: no mostrar desplegable
+                return;
+            }
             openDropdown();
         });
 
-        input.addEventListener('input', function () {
+        // 2. Al hacer clic en el campo: si ya tiene producto puesto, no abrir automáticamente
+        input.addEventListener('click', function () {
+            if (isSelecting) return;
+            if (this.value.trim() !== '') {
+                return;
+            }
+            if (menu.classList.contains('hidden')) {
+                openDropdown();
+            }
+        });
+
+        // 3. Cuando el usuario teclea o edita el texto
+        input.addEventListener('input', function (e) {
+            if (isSelecting) return;
+            if (e.detail && e.detail.fromSelect) return;
+
             if (menu.classList.contains('hidden')) {
                 openDropdown();
             } else {
@@ -222,6 +290,7 @@
             }
         });
 
+        // 4. Navegación con teclado
         input.addEventListener('keydown', function (e) {
             if (menu.classList.contains('hidden')) {
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -251,20 +320,19 @@
                     selectItem(currentFiltered[activeIndex]);
                 } else {
                     closeDropdown();
+                    input.blur();
                 }
-            } else if (e.key === 'Escape') {
-                closeDropdown();
-            } else if (e.key === 'Tab') {
+            } else if (e.key === 'Escape' || e.key === 'Tab') {
                 closeDropdown();
             }
         });
 
+        // 5. Botón chevron toggle
         if (toggleBtn) {
             toggleBtn.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 if (menu.classList.contains('hidden')) {
-                    input.focus();
                     openDropdown();
                 } else {
                     closeDropdown();
@@ -272,7 +340,7 @@
             });
         }
 
-        // Cerrar al hacer clic fuera
+        // 6. Cerrar al hacer clic fuera
         document.addEventListener('click', function (e) {
             if (!wrapper.contains(e.target)) {
                 closeDropdown();

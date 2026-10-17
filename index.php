@@ -432,8 +432,8 @@ include 'includes/header.php';
                                             <a href="comprobante_publico.php?id=<?php echo $doc['id']; ?>" target="_blank" class="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors" title="Ver Detalle">
                                                 <i class="fa-solid fa-eye text-xs"></i>
                                             </a>
-                                            <a href="javascript:void(0)" onclick="alert('Descarga de PDF para <?php echo $doc['serie']; ?>')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Descargar PDF">
-                                                <i class="fa-solid fa-file-pdf text-xs"></i>
+                                            <a href="comprobante_publico.php?id=<?php echo $doc['id']; ?>&print=1" target="_blank" class="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors" title="Imprimir / PDF">
+                                                <i class="fa-solid fa-print text-xs"></i>
                                             </a>
                                         </div>
                                     </td>

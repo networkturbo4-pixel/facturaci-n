@@ -15,7 +15,7 @@ $numero_emitido = '';
 // Cargar catálogo de productos activos para autocompletado y selección rápida
 $productosCatalogo = [];
 try {
-    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario FROM productos WHERE activo = 1 ORDER BY descripcion ASC");
+    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario, stock FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC");
     if ($stmtProd) {
         $productosCatalogo = $stmtProd->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -355,7 +355,7 @@ include 'includes/header.php';
 
 
                             <!-- Tabla Responsiva de Ítems (Tabla en PC / Tarjetas 2-Columnas en Móvil sin scroll horizontal) -->
-                            <div class="overflow-x-auto mb-4 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                            <div class="overflow-visible mb-4 rounded-xl border border-slate-200/80 dark:border-slate-800">
                                 <table class="w-full text-left border-collapse responsive-table">
                                     <thead>
                                         <tr class="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200/80 dark:border-slate-700 text-slate-500 text-[11px] uppercase tracking-wider font-bold">
@@ -506,7 +506,7 @@ include 'includes/header.php';
     </div>
 </main>
 
-<script src="js/product_dropdown.js?v=1.0"></script>
+<script src="js/product_dropdown.js?v=<?php echo time(); ?>"></script>
 <script>
 // Catálogo de productos para el componente desplegable moderno
 const catalogoProductos = <?php echo json_encode($productosCatalogo, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
