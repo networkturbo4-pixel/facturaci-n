@@ -167,6 +167,36 @@ function ensureGitRepository($repoDir, $remoteUrl = 'https://github.com/networkt
     return isGitRepository($repoDir);
 }
 
+/**
+ * Sincroniza forzosamente el código con origin/main (git reset --hard) preservando
+ * archivos locales críticos del servidor (credenciales, .htaccess, .env).
+ * Se usa cuando el repo local no tiene commit (HEAD inexistente, p.ej. creado con git init + fetch)
+ * o cuando "git pull" aborta por archivos sin seguimiento que serían sobrescritos.
+ */
+function forceSyncWithRemote($repoDir, array &$logs) {
+    $protected = ['includes/db.config.php', '.htaccess', '.env'];
+    $backups = [];
+    foreach ($protected as $rel) {
+        $path = $repoDir . '/' . $rel;
+        if (is_file($path)) {
+            $backups[$rel] = file_get_contents($path);
+        }
+    }
+
+    $res = runGitCommand('reset --hard origin/main', $repoDir);
+    $logs[] = ' ✓ Sincronización forzada (git reset --hard origin/main): ' . ($res['output'] ?: 'OK');
+
+    // Asegurar que la rama local quede apuntando a main
+    runGitCommand('checkout -B main origin/main', $repoDir);
+
+    foreach ($backups as $rel => $content) {
+        @file_put_contents($repoDir . '/' . $rel, $content);
+    }
+    $logs[] = ' ✓ Configuración local protegida y restaurada (' . implode(', ', array_keys($backups)) . ').';
+
+    return $res['code'] === 0;
+}
+
 $repoDir = getRepoDirectory();
 
 switch ($action) {
@@ -282,14 +312,19 @@ switch ($action) {
         }
 
         // Comprobar con precisión cuántos commits remotos faltan por descargar localmente
-        $behindCheck = runGitCommand('rev-list --count HEAD..origin/main', $repoDir);
-        $bOut = trim($behindCheck['output'] ?? '');
-        $commitsBehindCount = ($behindCheck['code'] === 0 && is_numeric($bOut)) ? (int)$bOut : 0;
+        if (empty($localCommit) && !empty($remoteCommit)) {
+            // Repo local sin commit (HEAD inexistente): todo el remoto es "nuevo"
+            $commitsBehindCount = 1;
+        } else {
+            $behindCheck = runGitCommand('rev-list --count HEAD..origin/main', $repoDir);
+            $bOut = trim($behindCheck['output'] ?? '');
+            $commitsBehindCount = ($behindCheck['code'] === 0 && is_numeric($bOut)) ? (int)$bOut : 0;
+        }
 
         $hasUpdates = ($commitsBehindCount > 0);
         $commitsBehind = [];
 
-        if ($hasUpdates) {
+        if ($hasUpdates && !empty($localCommit)) {
             $logRes = runGitCommand('log HEAD..origin/main --oneline -n 10', $repoDir);
             if (!empty($logRes['output']) && strpos($logRes['output'], 'fatal:') === false) {
                 $commitsBehind = explode("\n", trim($logRes['output']));
@@ -348,15 +383,43 @@ switch ($action) {
             }
         } catch (Exception $e) {}
 
-        $pullRes = runGitCommand('pull origin main', $repoDir);
-        $logs[] = ' ✓ Git Pull: ' . ($pullRes['output'] ?: 'Archivos sincronizados.');
+        $fetchRes = runGitCommand('fetch origin main:refs/remotes/origin/main', $repoDir);
+        if ($fetchRes['code'] !== 0) {
+            echo json_encode([
+                'success' => false,
+                'logs' => $logs,
+                'message' => 'No se pudo descargar desde GitHub: ' . $fetchRes['output']
+            ]);
+            exit;
+        }
 
-        if ($pullRes['code'] !== 0 && strpos($pullRes['output'], 'Already up to date') === false) {
-            // Intentar con git stash si había algún cambio accidental en archivo rastreado
-            $logs[] = ' ! Hubo una advertencia en Git Pull. Intentando resolución segura...';
-            runGitCommand('stash', $repoDir);
-            $retryPull = runGitCommand('pull origin main', $repoDir);
-            $logs[] = ' ✓ Reintento de sincronización: ' . $retryPull['output'];
+        $headCheck = runGitCommand('rev-parse --verify HEAD', $repoDir);
+        $hasHead = ($headCheck['code'] === 0);
+
+        $synced = false;
+        if ($hasHead) {
+            $pullRes = runGitCommand('pull origin main', $repoDir);
+            $logs[] = ' ✓ Git Pull: ' . ($pullRes['output'] ?: 'Archivos sincronizados.');
+            $synced = ($pullRes['code'] === 0 || strpos($pullRes['output'], 'Already up to date') !== false);
+        } else {
+            $logs[] = ' ! El repositorio local no tenía commit base; se sincronizará directamente con origin/main.';
+        }
+
+        if (!$synced) {
+            // Pull abortado (archivos sin seguimiento, cambios locales o HEAD inexistente): sincronización forzada segura
+            if ($hasHead) {
+                $logs[] = ' ! Git Pull no pudo completarse. Aplicando sincronización forzada segura...';
+            }
+            $synced = forceSyncWithRemote($repoDir, $logs);
+        }
+
+        if (!$synced) {
+            echo json_encode([
+                'success' => false,
+                'logs' => $logs,
+                'message' => 'No se pudo sincronizar el código con el repositorio. Revisa los registros o sube el paquete ZIP manualmente.'
+            ]);
+            exit;
         }
 
         // 3. Ejecutar Migraciones de Base de Datos
