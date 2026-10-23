@@ -15,7 +15,7 @@ $numero_emitido = '';
 // Cargar catálogo de productos activos para autocompletado y selección rápida
 $productosCatalogo = [];
 try {
-    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario, stock FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC");
+    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario, stock, stock_minimo, lote_actual FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC");
     if ($stmtProd) {
         $productosCatalogo = $stmtProd->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -77,13 +77,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $comprobante_emitido_id = $comprobante_id;
                 $token_emitido = $token_publico;
 
-                // Insertar Líneas
+                // Insertar Líneas y descontar Stock / Lote FIFO
                 $stmt_line = $conn->prepare("INSERT INTO comprobante_lineas (comprobante_id, cantidad, descripcion, precio_unitario, total_linea) VALUES (?, ?, ?, ?, ?)");
+                $usrActual = currentUser();
                 foreach ($qtys as $index => $q) {
                     $d  = trim($descs[$index] ?? '');
                     $p  = (float)($prices[$index] ?? 0);
                     $tl = (float)$q * $p;
                     $stmt_line->execute([$comprobante_id, (float)$q, $d, $p, $tl]);
+                    descontarStockPorVenta($conn, $d, (float)$q, $numero_emitido, $usrActual['nombre'] ?? 'Sistema', (int)$comprobante_id);
                 }
 
                 $conn->commit();

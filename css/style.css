@@ -1092,13 +1092,122 @@ html.dark .app-modal--executive .app-modal__actions {
     border-top-color: #334155;
 }
 
+/* ============================================================================
+   MODERN CHECKBOXES & CHILD-STATE ROW STYLING (brand-consistent-forms & :has)
+   ============================================================================ */
+:root {
+    --checkbox-brand-accent: #4f46e5;
+}
+html.dark {
+    --checkbox-brand-accent: #818cf8;
+}
+
+.modern-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+}
+
+.modern-checkbox {
+    accent-color: var(--checkbox-brand-accent);
+    width: 1.05rem;
+    height: 1.05rem;
+    border-radius: 0.35rem;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.modern-checkbox:hover {
+    transform: scale(1.06);
+}
+
+.modern-checkbox:focus-visible {
+    outline: 2px solid var(--checkbox-brand-accent);
+    outline-offset: 2px;
+}
+
+/* Progressive enhancement fallback when accent-color is not supported */
+@supports not (accent-color: var(--checkbox-brand-accent)) {
+    .modern-checkbox-label input[type="checkbox"].modern-checkbox {
+        position: absolute !important;
+        clip-path: inset(50%) !important;
+        overflow: hidden !important;
+        width: 1px !important;
+        height: 1px !important;
+        margin: -1px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        white-space: nowrap !important;
+    }
+    .modern-checkbox-label > span.checkbox-fallback-box {
+        display: inline-flex;
+        width: 1.05rem;
+        height: 1.05rem;
+        border: 2px solid #94a3b8;
+        border-radius: 0.35rem;
+        background: #ffffff;
+        align-items: center;
+        justify-content: center;
+    }
+    .modern-checkbox-label input[type="checkbox"].modern-checkbox:checked + span.checkbox-fallback-box {
+        background: var(--checkbox-brand-accent);
+        border-color: var(--checkbox-brand-accent);
+    }
+    .modern-checkbox-label input[type="checkbox"].modern-checkbox:checked + span.checkbox-fallback-box::after {
+        content: "✓";
+        color: #ffffff;
+        font-size: 0.7rem;
+        font-weight: 800;
+    }
+}
+
+/* Child-state-based row styling via :has() */
+.selectable-product-row {
+    --row-selected-bg: transparent;
+    --row-selected-border: transparent;
+    background-color: var(--row-selected-bg);
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.selectable-product-row:has(.prod-checkbox:checked) {
+    --row-selected-bg: rgba(79, 70, 229, 0.07);
+    --row-selected-border: #6366f1;
+    background-color: var(--row-selected-bg) !important;
+    box-shadow: inset 3px 0 0 0 var(--row-selected-border);
+}
+
+html.dark .selectable-product-row:has(.prod-checkbox:checked) {
+    --row-selected-bg: rgba(99, 102, 241, 0.16);
+    --row-selected-border: #818cf8;
+    background-color: var(--row-selected-bg) !important;
+}
+
+/* Fallback for browsers without :has() support */
+@supports not selector(:has(*)) {
+    .selectable-product-row.is-row-selected {
+        --row-selected-bg: rgba(79, 70, 229, 0.07);
+        --row-selected-border: #6366f1;
+        background-color: var(--row-selected-bg) !important;
+        box-shadow: inset 3px 0 0 0 var(--row-selected-border);
+    }
+    html.dark .selectable-product-row.is-row-selected {
+        --row-selected-bg: rgba(99, 102, 241, 0.16);
+        --row-selected-border: #818cf8;
+        background-color: var(--row-selected-bg) !important;
+    }
+}
+
 /* Modal Style 4: Sheet Adaptativo (sheet) */
 .app-modal-backdrop--sheet {
     align-items: flex-end;
     padding: 0.75rem;
 }
 @media (min-width: 640px) {
-    .app-modal-backdrop--sheet {
+    /* Modal Style 4: Sheet Adaptativo (sheet) */
+.app-modal-backdrop--sheet {
         padding-bottom: 2rem;
     }
 }

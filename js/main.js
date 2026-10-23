@@ -434,8 +434,12 @@
         tds.forEach((td, idx) => {
             const rawHeader = (headers[idx] !== undefined ? headers[idx] : '').trim();
             const lowerHeader = rawHeader.toLowerCase();
+            const isCheckboxCell = idx === 0 && !!td.querySelector('input[type="checkbox"]');
 
-            if (!td.hasAttribute('data-label')) {
+            if (isCheckboxCell && !rawHeader) {
+                td.setAttribute('data-label', 'Seleccionar');
+                td.setAttribute('data-checkbox-cell', 'true');
+            } else if (!td.hasAttribute('data-label')) {
                 td.setAttribute('data-label', rawHeader);
             } else if (rawHeader && td.getAttribute('data-label') !== rawHeader) {
                 td.setAttribute('data-label', rawHeader);
@@ -455,7 +459,8 @@
                     td.setAttribute('data-field', 'input');
                 }
             } else {
-                if (idx === 0) {
+                const firstCellHasCheckbox = tds[0] && !!tds[0].querySelector('input[type="checkbox"]');
+                if ((idx === 0 && !firstCellHasCheckbox) || (idx === 1 && firstCellHasCheckbox)) {
                     td.setAttribute('data-primary', 'true');
                 }
                 if (idx === tds.length - 1 && (lowerHeader.includes('acci') || rawHeader === '' || td.querySelector('a, button, form'))) {

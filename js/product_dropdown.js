@@ -111,14 +111,19 @@
 
                 const priceNum = parseFloat(item.precio_unitario) || 0;
                 const stockNum = parseFloat(item.stock) || 0;
+                const minStock = parseFloat(item.stock_minimo) || 10;
                 const unitStr = (item.unidad_medida || 'NIU').toUpperCase();
+                const loteStr = item.lote_actual || '';
 
                 let stockHtml = '';
-                if (!isService && stockNum > 0) {
+                if (!isService && stockNum <= 0) {
+                    stockHtml = `<span class="text-[10px] text-red-600 dark:text-red-400 font-bold"><i class="fa-solid fa-circle-exclamation text-[9px]"></i> Sin Stock (0)</span>`;
+                } else if (!isService && stockNum <= minStock) {
+                    stockHtml = `<span class="text-[10px] text-amber-600 dark:text-amber-400 font-bold"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Stock Bajo: ${stockNum}</span>`;
+                } else if (!isService && stockNum > 0) {
                     stockHtml = `<span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold"><i class="fa-solid fa-check text-[9px]"></i> Stock: ${stockNum}</span>`;
-                } else if (!isService && stockNum <= 0) {
-                    stockHtml = `<span class="text-[10px] text-amber-500 font-semibold">Stock bajo</span>`;
                 }
+                const loteHtml = loteStr ? `<span class="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-500/20"><i class="fa-solid fa-barcode mr-0.5 text-[8px]"></i>${escapeHtml(loteStr)}</span>` : '';
 
                 card.innerHTML = `
                     <div class="flex items-center gap-2.5 min-w-0 flex-1">
@@ -129,11 +134,12 @@
                             <p class="text-xs font-bold text-slate-800 dark:text-slate-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 truncate">
                                 ${highlightMatch(item.descripcion, query)}
                             </p>
-                            <div class="flex items-center gap-1.5 mt-0.5">
+                            <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
                                 <span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
                                     ${highlightMatch(code, query)}
                                 </span>
                                 <span class="text-[10px] text-slate-400 uppercase font-semibold">${escapeHtml(unitStr)}</span>
+                                ${loteHtml}
                                 ${stockHtml}
                             </div>
                         </div>
@@ -236,6 +242,19 @@
             isSelecting = true;
             input.value = item.descripcion;
             input.dataset.selectedCode = item.codigo || '';
+
+            // Alerta preventiva de stock bajo o agotado al seleccionar en facturación/exportación
+            const code = (item.codigo || '').toUpperCase();
+            const isSrv = code.startsWith('SRV') || (item.unidad_medida || '').toUpperCase() === 'ZZ';
+            const st = parseFloat(item.stock) || 0;
+            const minSt = parseFloat(item.stock_minimo) || 10;
+            if (!isSrv && typeof window.showToast === 'function') {
+                if (st <= 0) {
+                    window.showToast(`El producto "${item.descripcion}" (${item.codigo}) se encuentra SIN STOCK (0.00). Se recomienda registrar un nuevo lote de compra.`, 'warning', 'Alerta: Producto Sin Stock');
+                } else if (st <= minSt) {
+                    window.showToast(`"${item.descripcion}" tiene stock bajo (${st} ${item.unidad_medida || 'NIU'}). Lote activo: ${item.lote_actual || 'N/A'}.`, 'warning', 'Aviso de Stock Bajo');
+                }
+            }
 
             // Cerrar inmediatamente el desplegable para que no siga visible
             closeDropdown();

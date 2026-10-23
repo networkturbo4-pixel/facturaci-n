@@ -29,6 +29,10 @@ if (!APP_DEBUG) {
 }
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/inventario_service.php';
+if (isset($conn) && $conn instanceof PDO) {
+    ensureInventarioSchema($conn);
+}
 
 /**
  * Verifica si hay un usuario autenticado

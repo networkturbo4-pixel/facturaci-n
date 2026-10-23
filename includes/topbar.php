@@ -86,19 +86,70 @@ $isProd = ($brand['sunat_modo'] === 'produccion');
         </button>
 
         <!-- Notifications Dropdown -->
+        <?php
+        $stockAlertsTopbar = (isset($conn) && function_exists('obtenerResumenAlertasStock')) ? obtenerResumenAlertasStock($conn) : ['agotados' => [], 'bajo_stock' => [], 'total_alertas' => 0];
+        $totalStockAlerts  = (int)($stockAlertsTopbar['total_alertas'] ?? 0);
+        $hasCriticalOut    = !empty($stockAlertsTopbar['agotados']);
+        ?>
         <div class="relative" id="notificationsContainer">
-            <button id="notificationsBtn" class="relative w-9 h-9 flex items-center justify-center text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white bg-slate-100/70 dark:bg-slate-800/80 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-xl transition-colors focus:outline-none" title="Notificaciones">
-                <i class="fa-regular fa-bell text-xs sm:text-sm"></i>
-                <span class="absolute top-1.5 right-2 w-2 h-2 bg-brand-600 rounded-full border-2 border-white dark:border-slate-900"></span>
+            <button id="notificationsBtn" class="relative w-9 h-9 flex items-center justify-center text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white bg-slate-100/70 dark:bg-slate-800/80 hover:bg-slate-200/70 dark:hover:bg-slate-700 rounded-xl transition-colors focus:outline-none" title="Notificaciones y Alertas de Stock">
+                <i class="fa-regular fa-bell text-xs sm:text-sm <?php echo $totalStockAlerts > 0 ? 'text-amber-500 dark:text-amber-400 animate-pulse' : ''; ?>"></i>
+                <?php if ($totalStockAlerts > 0): ?>
+                    <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 <?php echo $hasCriticalOut ? 'bg-red-600' : 'bg-amber-500'; ?> text-white text-[10px] font-extrabold rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-xs">
+                        <?php echo $totalStockAlerts; ?>
+                    </span>
+                <?php else: ?>
+                    <span class="absolute top-1.5 right-2 w-2 h-2 bg-brand-600 rounded-full border-2 border-white dark:border-slate-900"></span>
+                <?php endif; ?>
             </button>
 
             <!-- Notifications Popover -->
-            <div id="notificationsMenu" class="hidden absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700 py-2 z-50 animate-fade-in">
+            <div id="notificationsMenu" class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700 py-2 z-50 animate-fade-in">
                 <div class="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <span class="text-xs font-bold text-slate-800 dark:text-white">Notificaciones del Sistema</span>
-                    <span class="text-[10px] font-semibold text-brand-600 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/15 px-2 py-0.5 rounded-full">Activas</span>
+                    <span class="text-xs font-bold text-slate-800 dark:text-white">Notificaciones & Alertas</span>
+                    <?php if ($totalStockAlerts > 0): ?>
+                        <span class="text-[10px] font-bold <?php echo $hasCriticalOut ? 'text-red-700 bg-red-50 dark:bg-red-500/15 dark:text-red-300' : 'text-amber-700 bg-amber-50 dark:bg-amber-500/15 dark:text-amber-300'; ?> px-2 py-0.5 rounded-full">
+                            <?php echo $totalStockAlerts; ?> alerta<?php echo $totalStockAlerts === 1 ? '' : 's'; ?> de stock
+                        </span>
+                    <?php else: ?>
+                        <span class="text-[10px] font-semibold text-brand-600 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/15 px-2 py-0.5 rounded-full">Activas</span>
+                    <?php endif; ?>
                 </div>
-                <div class="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                <div class="divide-y divide-slate-100 dark:divide-slate-800 text-xs max-h-80 overflow-y-auto">
+                    <?php if (!empty($stockAlertsTopbar['agotados'])): ?>
+                        <?php foreach (array_slice($stockAlertsTopbar['agotados'], 0, 3) as $ag): ?>
+                        <a href="productos.php?tab=alertas" class="px-4 py-3 bg-red-50/40 dark:bg-red-500/5 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex gap-3">
+                            <div class="w-7 h-7 rounded-lg bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 text-xs">
+                                <i class="fa-solid fa-box-open"></i>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="font-bold text-red-700 dark:text-red-300 truncate">¡Producto Sin Stock!</p>
+                                    <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300"><?php echo htmlspecialchars($ag['codigo']); ?></span>
+                                </div>
+                                <p class="text-[11px] text-slate-600 dark:text-slate-300 truncate"><?php echo htmlspecialchars($ag['descripcion']); ?> (0.00 <?php echo htmlspecialchars($ag['unidad_medida']); ?>)</p>
+                            </div>
+                        </a>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
+                    <?php if (!empty($stockAlertsTopbar['bajo_stock'])): ?>
+                        <?php foreach (array_slice($stockAlertsTopbar['bajo_stock'], 0, 3) as $bs): ?>
+                        <a href="productos.php?tab=alertas" class="px-4 py-3 bg-amber-50/40 dark:bg-amber-500/5 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors flex gap-3">
+                            <div class="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 text-xs">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="font-bold text-amber-800 dark:text-amber-300 truncate">Alerta de Stock Bajo</p>
+                                    <span class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300"><?php echo htmlspecialchars($bs['codigo']); ?></span>
+                                </div>
+                                <p class="text-[11px] text-slate-600 dark:text-slate-300 truncate"><?php echo htmlspecialchars($bs['descripcion']); ?> — Quedan <?php echo number_format((float)$bs['stock'], 2); ?> (Mín: <?php echo number_format((float)$bs['stock_minimo'], 0); ?>)</p>
+                            </div>
+                        </a>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+
                     <div class="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer flex gap-3">
                         <div class="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 text-xs">
                             <i class="fa-solid fa-check"></i>
@@ -108,18 +159,10 @@ $isProd = ($brand['sunat_modo'] === 'produccion');
                             <p class="text-[11px] text-slate-500 dark:text-slate-400">Proveedor activo: <?php echo strtoupper($brand['facturacion_proveedor']); ?> (<?php echo ucfirst($brand['sunat_modo']); ?>).</p>
                         </div>
                     </div>
-                    <div class="px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors cursor-pointer flex gap-3">
-                        <div class="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 text-xs">
-                            <i class="fa-solid fa-sliders"></i>
-                        </div>
-                        <div>
-                            <p class="font-semibold text-slate-800 dark:text-slate-100">Personalización UI & Tema</p>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Configura logos claro/oscuro, estilos de Toast y Modales en Ajustes.</p>
-                        </div>
-                    </div>
                 </div>
-                <div class="px-4 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800 text-center">
-                    <a href="comprobantes.php" class="text-[11px] font-semibold text-brand-600 dark:text-brand-400 hover:underline">Ver todos los comprobantes</a>
+                <div class="px-4 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-center">
+                    <a href="productos.php?tab=alertas" class="text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:underline">Alertas de Stock</a>
+                    <a href="comprobantes.php" class="text-[11px] font-semibold text-brand-600 dark:text-brand-400 hover:underline">Ver Comprobantes</a>
                 </div>
             </div>
         </div>

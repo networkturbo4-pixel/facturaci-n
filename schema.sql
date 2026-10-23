@@ -22,11 +22,60 @@ CREATE TABLE IF NOT EXISTS productos (
     descripcion VARCHAR(255) NOT NULL,
     unidad_medida VARCHAR(20) NOT NULL DEFAULT 'NIU',
     precio_unitario DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    costo_compra DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     codigo_partida VARCHAR(20) NULL,
+    lote_actual VARCHAR(60) NULL,
     stock DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    stock_minimo DECIMAL(12,2) NOT NULL DEFAULT 10.00,
     tipo_igv VARCHAR(20) NOT NULL DEFAULT 'Gravado',
     estado VARCHAR(20) NOT NULL DEFAULT 'Activo',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla de Lotes de Compra & Trazabilidad
+CREATE TABLE IF NOT EXISTS producto_lotes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    producto_id INT NOT NULL,
+    codigo_lote VARCHAR(60) NOT NULL,
+    cantidad_inicial DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    cantidad_actual DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    costo_unitario DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    fecha_compra DATE NOT NULL,
+    hora_compra TIME NOT NULL,
+    comprado_por VARCHAR(120) NOT NULL,
+    usuario_id INT NULL,
+    proveedor_ruc VARCHAR(20) NULL,
+    proveedor_nombre VARCHAR(200) NULL,
+    tipo_documento VARCHAR(60) NOT NULL DEFAULT 'Factura de Compra',
+    numero_documento VARCHAR(60) NULL,
+    metodo_compra VARCHAR(80) NOT NULL DEFAULT 'Compra Directa / Contado',
+    documento_url VARCHAR(500) NULL,
+    documento_nombre VARCHAR(255) NULL,
+    observaciones TEXT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'Activo',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+    INDEX idx_prod_lote (producto_id),
+    INDEX idx_cod_lote (codigo_lote)
+);
+
+-- Tabla de Kardex / Movimientos de Stock
+CREATE TABLE IF NOT EXISTS stock_movimientos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    producto_id INT NOT NULL,
+    lote_id INT NULL,
+    codigo_lote VARCHAR(60) NULL,
+    tipo_movimiento VARCHAR(20) NOT NULL,
+    cantidad DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    stock_resultante DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    motivo VARCHAR(150) NOT NULL,
+    referencia_doc VARCHAR(100) NULL,
+    comprobante_id INT NULL,
+    usuario_nombre VARCHAR(120) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE,
+    INDEX idx_mov_prod (producto_id),
+    INDEX idx_mov_fecha (created_at)
 );
 
 -- Tabla de Comprobantes (Cabecera)

@@ -15,7 +15,7 @@ $error_msg   = '';
 // Cargar catálogo de productos activos para selección rápida y autocompletado
 $productosCatalogo = [];
 try {
-    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario, codigo_partida, stock FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC");
+    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario, codigo_partida, stock, stock_minimo, lote_actual FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC");
     $productosCatalogo = $stmtProd->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     $productosCatalogo = [];
@@ -168,12 +168,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (comprobante_id, linea_num, codigo_partida, unidad_medida, peso_bruto, peso_neto)
                     VALUES (?,?,?,?,?,?)");
 
+                $usrExp = currentUser();
+                $numExpDoc = $serie . '-' . str_pad((string)$correlativo, 6, '0', STR_PAD_LEFT);
                 foreach ($qtys as $i => $q) {
                     $d  = trim($descs[$i] ?? '');
                     if (empty($d)) continue;
                     $p  = (float)($prices[$i] ?? 0);
                     $tl = (float)$q * $p;
                     $stmt_line->execute([$comprobante_id, $q, $d, $p, $tl]);
+                    descontarStockPorVenta($conn, $d, (float)$q, $numExpDoc, $usrExp['nombre'] ?? 'Sistema', (int)$comprobante_id);
 
                     $linea_id = $conn->lastInsertId();
 

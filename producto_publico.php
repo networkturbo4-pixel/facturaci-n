@@ -201,6 +201,12 @@ $wspUrl = !empty($telLimpio) ? "https://api.whatsapp.com/send?phone={$telLimpio}
                             <?php echo number_format($stockNum, 2); ?> <?php echo htmlspecialchars($producto['unidad_medida']); ?>
                         </span>
                     </div>
+                    <?php if (!empty($producto['lote_actual'])): ?>
+                    <div class="p-4 rounded-xl border border-indigo-100 bg-indigo-50/40 flex justify-between items-center sm:col-span-2">
+                        <span class="text-slate-600 font-medium flex items-center gap-1.5"><i class="fa-solid fa-barcode text-indigo-600"></i> Lote de Trazabilidad Vigente:</span>
+                        <span class="font-mono font-bold text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-200"><?php echo htmlspecialchars($producto['lote_actual']); ?></span>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 

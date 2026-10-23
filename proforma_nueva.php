@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Cargar catálogo de clientes y productos
 try {
     $clientes = $conn->query("SELECT numero_documento, razon_social, direccion_fiscal FROM clientes ORDER BY razon_social ASC LIMIT 150")->fetchAll(PDO::FETCH_ASSOC);
-    $productos = $conn->query("SELECT codigo, descripcion, precio_unitario, unidad_medida, stock FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $productos = $conn->query("SELECT codigo, descripcion, precio_unitario, unidad_medida, stock, stock_minimo, lote_actual FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC")->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     $clientes = [];
     $productos = [];

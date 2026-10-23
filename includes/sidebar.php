@@ -193,12 +193,22 @@ function isNavActive($targets, $currentPage) {
                     </div>
                 </a>
 
-                <?php $active = isNavActive('productos.php', $currentPage); ?>
+                <?php 
+                $active = isNavActive('productos.php', $currentPage); 
+                $sidebarStockAlerts = (isset($conn) && function_exists('obtenerResumenAlertasStock')) ? obtenerResumenAlertasStock($conn) : ['total_alertas' => 0, 'agotados' => []];
+                $sidebarAlertCount  = (int)($sidebarStockAlerts['total_alertas'] ?? 0);
+                $sidebarHasOut      = !empty($sidebarStockAlerts['agotados']);
+                ?>
                 <a href="productos.php" class="flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-200 <?php echo $active ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white font-semibold shadow-md shadow-brand-600/25' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900/90 font-medium'; ?>">
                     <div class="flex items-center gap-3">
                         <i class="fa-solid fa-boxes-stacked w-4 text-center text-sm <?php echo $active ? 'text-white' : 'text-emerald-500 dark:text-emerald-400'; ?>"></i>
                         <span class="text-xs">Gestión de Ventas</span>
                     </div>
+                    <?php if ($sidebarAlertCount > 0): ?>
+                        <span class="px-1.5 py-0.5 text-[10px] font-extrabold rounded-md <?php echo $active ? 'bg-white/20 text-white' : ($sidebarHasOut ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'); ?>" title="<?php echo $sidebarAlertCount; ?> producto(s) con alerta de stock">
+                            <i class="fa-solid fa-triangle-exclamation text-[9px] mr-0.5"></i><?php echo $sidebarAlertCount; ?>
+                        </span>
+                    <?php endif; ?>
                 </a>
             </div>
         </div>
