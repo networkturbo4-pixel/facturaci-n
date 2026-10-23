@@ -24,6 +24,13 @@ if (!function_exists('ensureInventarioSchema')) {
                     ADD COLUMN IF NOT EXISTS lote_actual VARCHAR(60) NULL AFTER codigo_partida");
             }
 
+            // Verificar columna imagen_url en productos
+            $colImg = $conn->query("SHOW COLUMNS FROM productos LIKE 'imagen_url'")->fetch();
+            if (!$colImg) {
+                $conn->exec("ALTER TABLE productos
+                    ADD COLUMN IF NOT EXISTS imagen_url VARCHAR(500) NULL AFTER descripcion");
+            }
+
             // 2. Asegurar tabla producto_lotes
             $conn->exec("CREATE TABLE IF NOT EXISTS producto_lotes (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -137,9 +144,43 @@ if (!function_exists('generarSiguienteCodigoLote')) {
     }
 }
 
+if (!function_exists('procesarSubidaImagenProducto')) {
+    /**
+     * Procesa de forma segura la subida de la imagen del producto o valida una URL directa
+     */
+    function procesarSubidaImagenProducto(?array $fileInput, ?string $urlInput): ?string {
+        // 1. Si se proporcionó un archivo
+        if ($fileInput && !empty($fileInput['name']) && ($fileInput['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $origName = basename($fileInput['name']);
+            $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+            $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif'];
+            if (in_array($ext, $allowedExts, true)) {
+                $uploadDirRel = 'uploads/productos';
+                $uploadDirAbs = dirname(__DIR__) . '/' . $uploadDirRel;
+                if (!is_dir($uploadDirAbs)) {
+                    @mkdir($uploadDirAbs, 0775, true);
+                }
+                $fileName = 'prod_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 6) . '.' . $ext;
+                $destAbs  = $uploadDirAbs . '/' . $fileName;
+                $destRel  = $uploadDirRel . '/' . $fileName;
+                if (move_uploaded_file($fileInput['tmp_name'], $destAbs)) {
+                    return $destRel;
+                }
+            }
+        }
+
+        // 2. Si se proporcionó una URL directa
+        $urlClean = trim($urlInput ?? '');
+        if (!empty($urlClean)) {
+            return $urlClean;
+        }
+
+        return null;
+    }
+}
 if (!function_exists('procesarSubidaDocumentoCompra')) {
     /**
-     * Procesa de forma segura la subida del documento sustento de compra (PDF, JPG, PNG, WEBP)
+     * Procesa de forma segura la subida del documento sustento de compra (PDF, JPG, PNG, WEBP, XML)
      */
     function procesarSubidaDocumentoCompra(array $fileInput, string $codigoLote): array {
         if (empty($fileInput['name']) || ($fileInput['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
