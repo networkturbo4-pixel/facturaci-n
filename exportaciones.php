@@ -2,6 +2,11 @@
 require_once 'includes/auth.php';
 requireLogin();
 
+$flash_exp = $_SESSION['flash_exportacion'] ?? '';
+if ($flash_exp !== '') {
+    unset($_SESSION['flash_exportacion']);
+}
+
 try {
     // Consulta optimizada sin duplicación de filas usando agregación
     $stmt = $conn->query("
@@ -20,6 +25,11 @@ try {
 }
 
 // Estadísticas rápidas con rango de fecha sargable
+$flash_exp = $_SESSION['flash_exportacion'] ?? '';
+if ($flash_exp !== '') {
+    unset($_SESSION['flash_exportacion']);
+}
+
 try {
     $inicioMes = date('Y-m-01');
     $finMes    = date('Y-m-t');
@@ -56,6 +66,13 @@ include 'includes/header.php';
     ?>
 
     <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+        <?php if (!empty($flash_exp)): ?>
+        <div data-auto-toast="true" class="p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-200 rounded-2xl text-xs font-bold flex items-center gap-3 shadow-sm">
+            <i class="fa-solid fa-circle-check text-emerald-500 text-lg shrink-0"></i>
+            <span><?php echo htmlspecialchars($flash_exp); ?></span>
+        </div>
+        <?php endif; ?>
 
         <!-- Stats Cards (2 Columns on Mobile, 4 on Desktop) -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -313,7 +330,12 @@ async function enviarSunat(id, btn) {
     const icon = btn.querySelector('i');
     icon.className = 'fa-solid fa-spinner fa-spin';
     btn.disabled = true;
-    try {
+    $flash_exp = $_SESSION['flash_exportacion'] ?? '';
+if ($flash_exp !== '') {
+    unset($_SESSION['flash_exportacion']);
+}
+
+try {
         const res  = await fetch('api/enviar_sunat.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -352,7 +374,12 @@ async function guardarDam() {
     const btn    = document.getElementById('btn_guardar_dam');
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Guardando...';
-    try {
+    $flash_exp = $_SESSION['flash_exportacion'] ?? '';
+if ($flash_exp !== '') {
+    unset($_SESSION['flash_exportacion']);
+}
+
+try {
         const res  = await fetch('api/consultar_dam.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -150,21 +150,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ];
                 }
 
-                $validacionStock = validarStockDisponible($conn, $lineasCalculadas);
-                if (!$validacionStock['ok']) {
-                    if ($conn->inTransaction()) {
-                        $conn->rollBack();
-                    }
-                    $error_msg = implode(' ', $validacionStock['errores']);
+                if ($incluyeIgv) {
+                    $total = round($totalConIgvSum, 2);
+                    $igv   = round($total - $subtotal, 2);
                 } else {
-                    if ($incluyeIgv) {
-                        $total = round($totalConIgvSum, 2);
-                        $igv   = round($total - $subtotal, 2);
-                    } else {
-                        $subtotal = round($subtotal, 2);
-                        $igv      = round($subtotal * 0.18, 2);
-                        $total    = round($subtotal + $igv, 2);
-                    }
+                    $subtotal = round($subtotal, 2);
+                    $igv      = round($subtotal * 0.18, 2);
+                    $total    = round($subtotal + $igv, 2);
+                }
+
+                // Validar stock disponible antes de generar correlativo o insertar
+                validarStockDisponible($conn, $lineasCalculadas);
 
                 // Obtener el correlativo máximo con bloqueo de fila (evita colisiones en concurrencia)
                 $stmt = $conn->prepare("SELECT MAX(correlativo) as max_corr FROM comprobantes WHERE serie = ? FOR UPDATE");
@@ -232,7 +228,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Throwable $eSunat) {
                     $success_msg .= " | SUNAT: 🛡️ Guardado en contingencia (" . $eSunat->getMessage() . ").";
                 }
-                }
+
+                $_SESSION['flash_cpe'] = [
+                    'msg'         => $success_msg,
+                    'error_sunat' => $error_msg,
+                    'id'          => (int)$comprobante_id,
+                    'token'       => $token_publico,
+                    'numero'      => $numero_emitido
+                ];
+                header("Location: comprobantes.php");
+                exit;
             } catch (Exception $e) {
                 if ($conn->inTransaction()) {
                     $conn->rollBack();
@@ -639,9 +644,13 @@ include 'includes/header.php';
 
                                 <!-- Botón Principal de Emisión -->
                                 <div class="pt-3 space-y-2.5">
-                                    <button type="submit" id="btn_submit_cpe" class="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-extrabold rounded-xl shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99]">
+                                    <div id="alert_stock_bloqueo" class="hidden p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-[11px] font-bold flex items-center gap-2">
+                                        <i class="fa-solid fa-ban shrink-0"></i>
+                                        <span>Stock insuficiente en uno o más ítems. Ajusta la cantidad para emitir.</span>
+                                    </div>
+                                    <button type="submit" id="btn_submit_cpe" class="w-full py-3.5 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-extrabold rounded-xl shadow-lg shadow-emerald-600/25 transition-all flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
                                         <i class="fa-solid fa-paper-plane"></i>
-                                        <span>Emitir Comprobante a SUNAT</span>
+                                        <span id="txt_submit_cpe">Emitir Comprobante a SUNAT</span>
                                     </button>
 
                                     <div class="grid grid-cols-2 gap-2">
@@ -983,8 +992,77 @@ document.addEventListener('DOMContentLoaded', function() {
         if (lblCount) {
             lblCount.textContent = rows.length + ' línea(s) activa(s)';
         }
+        validarStockTabla();
         guardarBorrador();
     }
+
+    function validarStockTabla() {
+        const rows = tbody.querySelectorAll('.item-row');
+        const solicitadoPorId = {};
+        const prodPorFila = [];
+
+        rows.forEach((row, idx) => {
+            const desc = (row.querySelector('.item-desc')?.value || '').trim().toLowerCase();
+            const qty  = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+            const prod = catalogoProductos.find(p =>
+                (p.descripcion || '').trim().toLowerCase() === desc ||
+                (p.codigo || '').trim().toLowerCase() === desc
+            );
+            if (prod) {
+                const code = (prod.codigo || '').toUpperCase();
+                const unit = (prod.unidad_medida || '').toUpperCase();
+                const esServicio = code.startsWith('SRV') || unit === 'ZZ';
+                if (!esServicio) {
+                    solicitadoPorId[prod.id] = (solicitadoPorId[prod.id] || 0) + qty;
+                    prodPorFila[idx] = prod;
+                    return;
+                }
+            }
+            prodPorFila[idx] = null;
+        });
+
+        let hayBloqueo = false;
+        rows.forEach((row, idx) => {
+            const prod = prodPorFila[idx];
+            const qtyInput = row.querySelector('.item-qty');
+            const qtyCell = qtyInput ? qtyInput.closest('td') : null;
+            let errEl = qtyCell ? qtyCell.querySelector('.stock-error-msg') : null;
+
+            if (prod && solicitadoPorId[prod.id] > (parseFloat(prod.stock) || 0) + 0.0001) {
+                hayBloqueo = true;
+                const disp = parseFloat(prod.stock) || 0;
+                if (qtyInput) qtyInput.classList.add('text-rose-600', 'bg-rose-50');
+                if (qtyCell) {
+                    if (!errEl) {
+                        errEl = document.createElement('p');
+                        errEl.className = 'stock-error-msg text-[10px] font-bold text-rose-600 text-center mt-1';
+                        qtyCell.appendChild(errEl);
+                    }
+                    errEl.textContent = `Máx: ${disp}`;
+                }
+            } else {
+                if (qtyInput) qtyInput.classList.remove('text-rose-600', 'bg-rose-50');
+                if (errEl) errEl.remove();
+            }
+        });
+
+        const btnSubmit = document.getElementById('btn_submit_cpe');
+        const txtSubmit = document.getElementById('txt_submit_cpe');
+        const alertBox  = document.getElementById('alert_stock_bloqueo');
+        if (btnSubmit) btnSubmit.disabled = hayBloqueo;
+        if (txtSubmit) txtSubmit.textContent = hayBloqueo ? 'Stock Insuficiente' : 'Emitir Comprobante a SUNAT';
+        if (alertBox) alertBox.classList.toggle('hidden', !hayBloqueo);
+        return !hayBloqueo;
+    }
+
+    document.getElementById('formEmitirCpe')?.addEventListener('submit', function(e) {
+        if (!validarStockTabla()) {
+            e.preventDefault();
+            if (window.showToast) window.showToast('No puedes emitir cantidades superiores al stock disponible.', 'error', 'Stock Insuficiente');
+            return;
+        }
+        try { localStorage.removeItem(DRAFT_KEY); } catch (err) {}
+    });
 
     function guardarBorrador() {
         if (PREFILL_DATA && PREFILL_DATA.source_label) return;

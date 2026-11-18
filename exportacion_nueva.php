@@ -167,6 +167,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'Pendiente SUNAT'
                 ]);
 
+                // Validar stock disponible antes de emitir exportación
+                $itemsExpStock = [];
+                foreach ($qtys as $i => $q) {
+                    $d = trim($descs[$i] ?? '');
+                    if ($d !== '') {
+                        $itemsExpStock[] = ['desc' => $d, 'qty' => (float)$q];
+                    }
+                }
+                validarStockDisponible($conn, $itemsExpStock);
+
                 $comprobante_id = $conn->lastInsertId();
 
                 // Insertar líneas y partidas arancelarias
@@ -222,6 +232,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $success_msg .= " | SUNAT: 🛡️ " . $exSunat->getMessage();
                     }
                 }
+
+                $_SESSION['flash_exportacion'] = $success_msg;
+                header("Location: exportaciones.php");
+                exit;
 
             } catch (Exception $e) {
                 $conn->rollBack();

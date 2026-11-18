@@ -2,6 +2,11 @@
 require_once 'includes/auth.php';
 requireLogin();
 
+$flash_cpe = $_SESSION['flash_cpe'] ?? null;
+if ($flash_cpe) {
+    unset($_SESSION['flash_cpe']);
+}
+
 try {
     $stmt = $conn->query("SELECT * FROM comprobantes ORDER BY id DESC LIMIT 200");
     $comprobantes = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -25,6 +30,30 @@ include 'includes/sidebar.php';
     ?>
 
     <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+
+        <?php if (!empty($flash_cpe)): ?>
+        <?php $urlVerFlash = !empty($flash_cpe['token']) ? 'comprobante_publico.php?token=' . urlencode($flash_cpe['token']) : 'comprobante_publico.php?id=' . (int)$flash_cpe['id']; ?>
+        <div data-auto-toast="true" class="p-4 sm:p-5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+            <div class="flex items-start sm:items-center gap-3.5">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center text-base shrink-0 shadow-sm">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
+                <div>
+                    <h4 class="text-xs sm:text-sm font-extrabold text-emerald-950 dark:text-emerald-200">¡Comprobante <?php echo htmlspecialchars($flash_cpe['numero'] ?? ''); ?> Emitido!</h4>
+                    <p class="text-xs text-emerald-800 dark:text-emerald-300/90 mt-0.5"><?php echo htmlspecialchars($flash_cpe['msg'] ?? ''); ?></p>
+                    <?php if (!empty($flash_cpe['error_sunat'])): ?>
+                        <p class="text-xs text-amber-700 dark:text-amber-300 font-semibold mt-1"><?php echo htmlspecialchars($flash_cpe['error_sunat']); ?></p>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="<?php echo htmlspecialchars($urlVerFlash); ?>" target="_blank" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all">
+                    <i class="fa-solid fa-print"></i>
+                    <span>Ver / Imprimir PDF</span>
+                </a>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <?php if ($pendientesCount > 0): ?>
         <!-- Banner Plan de Contingencia SUNAT -->
@@ -414,7 +443,12 @@ async function sincronizarPendientes() {
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Sincronizando con SUNAT...';
     }
 
-    try {
+    $flash_cpe = $_SESSION['flash_cpe'] ?? null;
+if ($flash_cpe) {
+    unset($_SESSION['flash_cpe']);
+}
+
+try {
         const r = await fetch('api/cron_reintentar_sunat.php');
         const data = await r.json();
 

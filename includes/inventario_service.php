@@ -227,6 +227,53 @@ if (!function_exists('procesarSubidaDocumentoCompra')) {
     }
 }
 
+if (!function_exists('validarStockDisponible')) {
+    /**
+     * Valida que las cantidades solicitadas no superen el stock físico disponible en productos.
+     * Ignora servicios (unidad ZZ o código SRV*) y conceptos libres no vinculados al catálogo.
+     *
+     * @param PDO $conn
+     * @param array $items Lista de ['desc' => string, 'qty' => float]
+     * @throws Exception si algún producto supera su stock disponible
+     */
+    function validarStockDisponible(PDO $conn, array $items): void {
+        if (empty($items)) return;
+
+        $solicitadoPorProducto = [];
+        $infoProducto = [];
+        $stmt = $conn->prepare("SELECT id, codigo, descripcion, unidad_medida, stock FROM productos WHERE descripcion = ? OR codigo = ? LIMIT 1 FOR UPDATE");
+
+        foreach ($items as $it) {
+            $q = trim((string)($it['desc'] ?? ''));
+            $qty = (float)($it['qty'] ?? 0);
+            if ($q === '' || $qty <= 0) continue;
+
+            $stmt->execute([$q, $q]);
+            $prod = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$prod) continue;
+
+            $esServicio = (strtoupper($prod['unidad_medida'] ?? '') === 'ZZ') || str_starts_with(strtoupper($prod['codigo'] ?? ''), 'SRV');
+            if ($esServicio) continue;
+
+            $pid = (int)$prod['id'];
+            $solicitadoPorProducto[$pid] = ($solicitadoPorProducto[$pid] ?? 0.0) + $qty;
+            $infoProducto[$pid] = $prod;
+        }
+
+        foreach ($solicitadoPorProducto as $pid => $totalSolicitado) {
+            $prod = $infoProducto[$pid];
+            $disp = (float)$prod['stock'];
+            if ($totalSolicitado > $disp + 0.0001) {
+                throw new Exception(
+                    "Stock insuficiente para \"{$prod['descripcion']}\" ({$prod['codigo']}): "
+                    . "disponible " . number_format($disp, 2) . " {$prod['unidad_medida']}, "
+                    . "solicitado " . number_format($totalSolicitado, 2) . "."
+                );
+            }
+        }
+    }
+}
+
 if (!function_exists('descontarStockPorVenta')) {
     /**
      * Descuenta stock automáticamente de un producto y de su lote activo (FIFO) cuando se emite

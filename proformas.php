@@ -2,7 +2,10 @@
 require_once 'includes/auth.php';
 requireLogin();
 
-$success_msg = '';
+$success_msg = $_SESSION['flash_proforma'] ?? '';
+if ($success_msg !== '') {
+    unset($_SESSION['flash_proforma']);
+}
 $error_msg = '';
 
 // Procesar cambio de estado o eliminación

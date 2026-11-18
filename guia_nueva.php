@@ -2,6 +2,108 @@
 require_once 'includes/auth.php';
 requireLogin();
 
+$error_msg = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validate_csrf()) {
+        $error_msg = "Token de seguridad inválido o sesión expirada.";
+    } else {
+        $motivo     = trim($_POST['motivo_traslado'] ?? 'Venta');
+        $fecha      = $_POST['fecha_emision'] ?? date('Y-m-d');
+        $peso       = (float)($_POST['peso_bruto'] ?? 0);
+        $destDoc    = trim($_POST['destinatario_doc'] ?? '');
+        $destRazon  = trim($_POST['destinatario_razon'] ?? '');
+        $destDir    = trim($_POST['destinatario_dir'] ?? '');
+        $partDir    = trim($_POST['partida_direccion'] ?? '');
+        $partUbg    = trim($_POST['partida_ubigeo'] ?? '150101');
+        $llegDir    = trim($_POST['llegada_direccion'] ?? '');
+        $llegUbg    = trim($_POST['llegada_ubigeo'] ?? '150101');
+        $modalidad  = trim($_POST['modalidad_transporte'] ?? 'Transporte Privado');
+        $conductor  = trim($_POST['conductor_doc'] ?? '');
+        $placa      = trim($_POST['vehiculo_placa'] ?? '');
+
+        $qtys   = $_POST['qty'] ?? [];
+        $units  = $_POST['unidad'] ?? [];
+        $descs  = $_POST['desc'] ?? [];
+
+        $itemsGuia = [];
+        foreach ($qtys as $i => $q) {
+            $d = trim((string)($descs[$i] ?? ''));
+            $qNum = (float)$q;
+            if ($d !== '' && $qNum > 0) {
+                $itemsGuia[] = [
+                    'qty'    => $qNum,
+                    'unidad' => trim((string)($units[$i] ?? 'NIU')),
+                    'desc'   => $d
+                ];
+            }
+        }
+
+        if (empty($itemsGuia)) {
+            $error_msg = "Agregue al menos un bien a transportar.";
+        } else {
+            try {
+                $conn->exec("CREATE TABLE IF NOT EXISTS guias_remision (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    serie VARCHAR(10) NOT NULL DEFAULT 'T001',
+                    correlativo INT NOT NULL,
+                    fecha_emision DATE NOT NULL,
+                    motivo_traslado VARCHAR(120) NOT NULL,
+                    peso_bruto DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+                    destinatario_doc VARCHAR(20) NULL,
+                    destinatario_razon VARCHAR(200) NULL,
+                    partida_direccion TEXT NULL,
+                    partida_ubigeo VARCHAR(10) NULL,
+                    llegada_direccion TEXT NULL,
+                    llegada_ubigeo VARCHAR(10) NULL,
+                    modalidad_transporte VARCHAR(80) NULL,
+                    conductor_doc VARCHAR(50) NULL,
+                    vehiculo_placa VARCHAR(20) NULL,
+                    estado VARCHAR(30) DEFAULT 'Emitida',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+                $conn->exec("CREATE TABLE IF NOT EXISTS guia_remision_lineas (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    guia_id INT NOT NULL,
+                    cantidad DECIMAL(12,3) NOT NULL DEFAULT 1.000,
+                    unidad VARCHAR(20) NOT NULL DEFAULT 'NIU',
+                    descripcion VARCHAR(255) NOT NULL,
+                    FOREIGN KEY (guia_id) REFERENCES guias_remision(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+                $conn->beginTransaction();
+                validarStockDisponible($conn, $itemsGuia);
+
+                $serie = getSystemConfig('serie_guia', 'T001') ?: 'T001';
+                $stMax = $conn->prepare("SELECT MAX(correlativo) FROM guias_remision WHERE serie = ? FOR UPDATE");
+                $stMax->execute([$serie]);
+                $corr = ((int)$stMax->fetchColumn()) + 1;
+                $numGuia = $serie . '-' . str_pad((string)$corr, 6, '0', STR_PAD_LEFT);
+
+                $stIns = $conn->prepare("INSERT INTO guias_remision
+                    (serie, correlativo, fecha_emision, motivo_traslado, peso_bruto, destinatario_doc, destinatario_razon, partida_direccion, partida_ubigeo, llegada_direccion, llegada_ubigeo, modalidad_transporte, conductor_doc, vehiculo_placa, estado)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Emitida')");
+                $stIns->execute([$serie, $corr, $fecha, $motivo, $peso, $destDoc, $destRazon, $partDir, $partUbg, $llegDir, $llegUbg, $modalidad, $conductor, $placa]);
+                $guiaId = (int)$conn->lastInsertId();
+
+                $stLin = $conn->prepare("INSERT INTO guia_remision_lineas (guia_id, cantidad, unidad, descripcion) VALUES (?, ?, ?, ?)");
+                foreach ($itemsGuia as $it) {
+                    $stLin->execute([$guiaId, $it['qty'], $it['unidad'], $it['desc']]);
+                }
+
+                $conn->commit();
+                $_SESSION['flash_guia'] = "Guía de Remisión {$numGuia} emitida y registrada correctamente.";
+                header("Location: guias.php");
+                exit;
+            } catch (Exception $e) {
+                if ($conn->inTransaction()) $conn->rollBack();
+                $error_msg = $e->getMessage();
+            }
+        }
+    }
+}
+
 // Cargar catálogo de productos activos para autocompletado y selección rápida
 $productosCatalogo = [];
 try {
@@ -29,14 +131,23 @@ include 'includes/header.php';
     <div class="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
         <div class="max-w-5xl mx-auto">
             <h3 class="text-2xl font-bold text-gray-800 mb-6">Emitir Guía de Remisión Electrónica</h3>
-            
+
+            <?php if ($error_msg): ?>
+                <div class="mb-5 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold flex items-center gap-2.5">
+                    <i class="fa-solid fa-circle-exclamation text-rose-500 text-base shrink-0"></i>
+                    <span><?php echo htmlspecialchars($error_msg); ?></span>
+                </div>
+            <?php endif; ?>
+
+            <form method="POST" action="" id="formGuia">
+                <?php echo csrf_field(); ?>
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden p-8">
                 
                 <h4 class="text-sm font-semibold text-primary uppercase tracking-wider mb-4 border-b pb-2">1. Datos Generales</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Motivo del Traslado</label>
-                        <select class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary">
+                        <select name="motivo_traslado" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary">
                             <option>Venta</option>
                             <option>Venta sujeta a confirmación</option>
                             <option>Compra</option>
@@ -46,11 +157,11 @@ include 'includes/header.php';
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Fecha de Emisión / Traslado</label>
-                        <input type="date" value="<?php echo date('Y-m-d'); ?>" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary">
+                        <input type="date" name="fecha_emision" value="<?php echo date('Y-m-d'); ?>" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Peso Bruto Total (KGM)</label>
-                        <input type="number" step="0.01" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary" placeholder="Ej. 15.50">
+                        <input type="number" name="peso_bruto" step="0.01" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary" placeholder="Ej. 15.50">
                     </div>
                 </div>
 
@@ -61,7 +172,7 @@ include 'includes/header.php';
                             <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                                 <i class="fa-solid fa-magnifying-glass text-gray-400"></i>
                             </div>
-                            <input type="text" id="num_doc" class="flex-1 bg-white border border-gray-300 rounded-l-lg pl-10 p-2.5 text-sm focus:ring-primary focus:border-primary shadow-sm" placeholder="Ingrese RUC o DNI...">
+                            <input type="text" id="num_doc" name="destinatario_doc" class="flex-1 bg-white border border-gray-300 rounded-l-lg pl-10 p-2.5 text-sm focus:ring-primary focus:border-primary shadow-sm" placeholder="Ingrese RUC o DNI...">
                             <button type="button" id="btn_buscar_doc" class="bg-gray-100 hover:bg-gray-200 border border-l-0 border-gray-300 px-4 rounded-r-lg text-sm font-medium text-gray-600 flex items-center transition-colors">
                                 <i id="icon_buscar" class="fa-solid fa-magnifying-glass mr-2"></i> <span id="text_buscar">Buscar</span>
                             </button>
@@ -71,7 +182,7 @@ include 'includes/header.php';
                     <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 hidden" id="datos_cliente_encontrado">
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">Razón Social / Nombres</label>
-                            <input type="text" id="razon_social" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none" placeholder="Editable...">
+                            <input type="text" id="razon_social" name="destinatario_razon" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none" placeholder="Editable...">
                         </div>
                         <div>
                             <div class="flex items-center justify-between mb-1">
@@ -80,7 +191,7 @@ include 'includes/header.php';
                                     <i class="fa-solid fa-arrow-down mr-1"></i>Copiar a Punto de Llegada
                                 </button>
                             </div>
-                            <input type="text" id="direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none" placeholder="Editable...">
+                            <input type="text" id="direccion" name="destinatario_dir" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none" placeholder="Editable...">
                         </div>
                     </div>
                 </div>
@@ -105,10 +216,10 @@ include 'includes/header.php';
                         <select id="sel_punto_partida" class="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500">
                             <option value="">— Elegir local / punto registrado —</option>
                         </select>
-                        <input type="text" id="partida_direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección detallada de partida...">
+                        <input type="text" id="partida_direccion" name="partida_direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección detallada de partida...">
                         <div class="grid grid-cols-2 gap-2">
-                            <input type="text" id="partida_ubigeo" maxlength="6" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold" placeholder="Ubigeo (Ej. 150101)">
-                            <input type="text" id="partida_coords" class="w-full bg-white/80 border border-gray-300 rounded-lg p-2 text-[11px] font-mono text-slate-600" placeholder="Lat, Lng (opcional)">
+                            <input type="text" id="partida_ubigeo" name="partida_ubigeo" maxlength="6" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold" placeholder="Ubigeo (Ej. 150101)">
+                            <input type="text" id="partida_coords" name="partida_coords" class="w-full bg-white/80 border border-gray-300 rounded-lg p-2 text-[11px] font-mono text-slate-600" placeholder="Lat, Lng (opcional)">
                         </div>
                     </div>
 
@@ -130,10 +241,10 @@ include 'includes/header.php';
                         <select id="sel_punto_llegada" class="w-full bg-white border border-green-200 rounded-lg p-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-green-500">
                             <option value="">— Elegir punto de llegada frecuente —</option>
                         </select>
-                        <input type="text" id="llegada_direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección detallada de entrega...">
+                        <input type="text" id="llegada_direccion" name="llegada_direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección detallada de entrega...">
                         <div class="grid grid-cols-2 gap-2">
-                            <input type="text" id="llegada_ubigeo" maxlength="6" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold" placeholder="Ubigeo de llegada">
-                            <input type="text" id="llegada_coords" class="w-full bg-white/80 border border-gray-300 rounded-lg p-2 text-[11px] font-mono text-slate-600" placeholder="Lat, Lng (opcional)">
+                            <input type="text" id="llegada_ubigeo" name="llegada_ubigeo" maxlength="6" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold" placeholder="Ubigeo de llegada">
+                            <input type="text" id="llegada_coords" name="llegada_coords" class="w-full bg-white/80 border border-gray-300 rounded-lg p-2 text-[11px] font-mono text-slate-600" placeholder="Lat, Lng (opcional)">
                         </div>
                     </div>
                 </div>
@@ -142,18 +253,18 @@ include 'includes/header.php';
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Modalidad de Transporte</label>
-                        <select class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary">
+                        <select name="modalidad_transporte" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary">
                             <option>Transporte Privado (Propios)</option>
                             <option>Transporte Público (Terceros)</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">DNI/Licencia del Conductor</label>
-                        <input type="text" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary" placeholder="Número">
+                        <input type="text" name="conductor_doc" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary" placeholder="Número">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Placa del Vehículo</label>
-                        <input type="text" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary" placeholder="Ej. ABC-123">
+                        <input type="text" name="vehiculo_placa" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-primary focus:border-primary" placeholder="Ej. ABC-123">
                     </div>
                 </div>
 
@@ -163,7 +274,7 @@ include 'includes/header.php';
                         <table class="w-full text-left border-collapse min-w-[600px]">
                             <thead>
                                 <tr class="bg-gray-50 border-b border-gray-200 text-gray-600 text-xs uppercase tracking-wider">
-                                    <th class="px-4 py-3 font-semibold w-20">Cant.</th>
+                                    <th class="px-4 py-3 font-semibold w-28">Cant.</th>
                                     <th class="px-4 py-3 font-semibold w-32">Unidad</th>
                                     <th class="px-4 py-3 font-semibold min-w-[200px]">Descripción del Bien</th>
                                     <th class="px-4 py-3 font-semibold w-10"></th>
@@ -171,9 +282,9 @@ include 'includes/header.php';
                             </thead>
                             <tbody id="items_table_body">
                                 <tr class="border-b border-gray-100 item-row">
-                                    <td class="px-4 py-3"><input type="number" value="1" min="0.01" step="any" class="item-qty w-full border border-gray-300 rounded p-1.5 text-sm text-center"></td>
+                                    <td class="px-4 py-3"><input type="number" name="qty[]" value="1" min="0.01" step="any" class="item-qty w-full border border-gray-300 rounded p-1.5 text-sm text-center" required></td>
                                     <td class="px-4 py-3">
-                                        <select class="item-unit w-full border border-gray-300 rounded p-1.5 text-sm">
+                                        <select name="unidad[]" class="item-unit w-full border border-gray-300 rounded p-1.5 text-sm">
                                             <option value="NIU">NIU (Unidades)</option>
                                             <option value="KGM">KGM (Kilos)</option>
                                             <option value="LTR">LTR (Litros)</option>
@@ -184,7 +295,7 @@ include 'includes/header.php';
                                     <td class="px-4 py-3">
                                         <div class="product-dropdown-wrapper relative w-full">
                                             <div class="relative flex items-center">
-                                                <input type="text" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                                                <input type="text" name="desc[]" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-blue-500" required>
                                                 <button type="button" tabindex="-1" class="btn-toggle-dropdown absolute right-2 text-gray-400 hover:text-blue-600 p-1 rounded transition-transform" title="Ver catálogo">
                                                     <i class="fa-solid fa-chevron-down text-xs transition-transform duration-200"></i>
                                                 </button>
@@ -219,13 +330,19 @@ include 'includes/header.php';
                     <button type="button" id="btn_add_row" class="text-primary text-sm font-medium hover:text-blue-700"><i class="fa-solid fa-plus mr-1"></i> Agregar Bien</button>
                 </div>
 
+                <div id="alert_stock_guia" class="hidden mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-ban shrink-0"></i>
+                    <span>Stock insuficiente en uno o más bienes. Ajusta la cantidad para emitir la guía.</span>
+                </div>
+
                 <div class="flex justify-end gap-4 mt-8 pt-6 border-t border-gray-100">
                     <a href="guias.php" class="px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors">Cancelar</a>
-                    <button class="px-6 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center">
-                        <i class="fa-solid fa-paper-plane mr-2"></i> Emitir Guía a SUNAT
+                    <button type="submit" id="btn_submit_guia" class="px-6 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fa-solid fa-paper-plane mr-2"></i> <span id="txt_submit_guia">Emitir Guía a SUNAT</span>
                     </button>
                 </div>
             </div>
+            </form>
         </div>
     </div>
 </main>
@@ -499,6 +616,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     unitSel.add(new Option(um, um, true, true));
                 }
             }
+            validarStockGuia();
         });
     }
 
@@ -511,9 +629,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const tr = document.createElement('tr');
             tr.className = 'border-b border-gray-100 item-row';
             tr.innerHTML = `
-                <td class="px-4 py-3"><input type="number" value="1" min="0.01" step="any" class="item-qty w-full border border-gray-300 rounded p-1.5 text-sm text-center"></td>
+                <td class="px-4 py-3"><input type="number" name="qty[]" value="1" min="0.01" step="any" class="item-qty w-full border border-gray-300 rounded p-1.5 text-sm text-center" required></td>
                 <td class="px-4 py-3">
-                    <select class="item-unit w-full border border-gray-300 rounded p-1.5 text-sm">
+                    <select name="unidad[]" class="item-unit w-full border border-gray-300 rounded p-1.5 text-sm">
                         <option value="NIU">NIU (Unidades)</option>
                         <option value="KGM">KGM (Kilos)</option>
                         <option value="LTR">LTR (Litros)</option>
@@ -524,7 +642,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td class="px-4 py-3">
                     <div class="product-dropdown-wrapper relative w-full">
                         <div class="relative flex items-center">
-                            <input type="text" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                            <input type="text" name="desc[]" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-blue-500" required>
                             <button type="button" tabindex="-1" class="btn-toggle-dropdown absolute right-2 text-gray-400 hover:text-blue-600 p-1 rounded transition-transform" title="Ver catálogo">
                                 <i class="fa-solid fa-chevron-down text-xs transition-transform duration-200"></i>
                             </button>
@@ -558,17 +676,91 @@ document.addEventListener('DOMContentLoaded', function() {
             tr.querySelector('.item-desc')?.focus();
         });
 
+        tbody.addEventListener('input', function(e) {
+            if (e.target.classList.contains('item-qty') || e.target.classList.contains('item-desc')) {
+                validarStockGuia();
+            }
+        });
+
         tbody.addEventListener('click', function(e) {
             if (e.target.classList.contains('btn-remove') || e.target.closest('.btn-remove')) {
                 const row = e.target.closest('.item-row');
                 if (tbody.querySelectorAll('.item-row').length > 1) {
                     row.remove();
+                    validarStockGuia();
                 } else {
                     alert('Debe haber al menos un bien a transportar.');
                 }
             }
         });
     }
+
+    function validarStockGuia() {
+        if (!tbody) return true;
+        const rows = tbody.querySelectorAll('.item-row');
+        const solicitadoPorId = {};
+        const prodPorFila = [];
+
+        rows.forEach((row, idx) => {
+            const desc = (row.querySelector('.item-desc')?.value || '').trim().toLowerCase();
+            const qty  = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+            const prod = catalogoProductos.find(p =>
+                (p.descripcion || '').trim().toLowerCase() === desc ||
+                (p.codigo || '').trim().toLowerCase() === desc
+            );
+            if (prod) {
+                const code = (prod.codigo || '').toUpperCase();
+                const unit = (prod.unidad_medida || '').toUpperCase();
+                const esServicio = code.startsWith('SRV') || unit === 'ZZ';
+                if (!esServicio) {
+                    solicitadoPorId[prod.id] = (solicitadoPorId[prod.id] || 0) + qty;
+                    prodPorFila[idx] = prod;
+                    return;
+                }
+            }
+            prodPorFila[idx] = null;
+        });
+
+        let hayBloqueo = false;
+        rows.forEach((row, idx) => {
+            const prod = prodPorFila[idx];
+            const qtyInput = row.querySelector('.item-qty');
+            const qtyCell = qtyInput ? qtyInput.closest('td') : null;
+            let errEl = qtyCell ? qtyCell.querySelector('.stock-error-msg') : null;
+
+            if (prod && solicitadoPorId[prod.id] > (parseFloat(prod.stock) || 0) + 0.0001) {
+                hayBloqueo = true;
+                const disp = parseFloat(prod.stock) || 0;
+                if (qtyInput) qtyInput.classList.add('text-rose-600', 'bg-rose-50', 'border-rose-400');
+                if (qtyCell) {
+                    if (!errEl) {
+                        errEl = document.createElement('p');
+                        errEl.className = 'stock-error-msg text-[10px] font-bold text-rose-600 text-center mt-1';
+                        qtyCell.appendChild(errEl);
+                    }
+                    errEl.textContent = `Máx: ${disp}`;
+                }
+            } else {
+                if (qtyInput) qtyInput.classList.remove('text-rose-600', 'bg-rose-50', 'border-rose-400');
+                if (errEl) errEl.remove();
+            }
+        });
+
+        const btnSubmit = document.getElementById('btn_submit_guia');
+        const txtSubmit = document.getElementById('txt_submit_guia');
+        const alertBox  = document.getElementById('alert_stock_guia');
+        if (btnSubmit) btnSubmit.disabled = hayBloqueo;
+        if (txtSubmit) txtSubmit.textContent = hayBloqueo ? 'Stock Insuficiente' : 'Emitir Guía a SUNAT';
+        if (alertBox) alertBox.classList.toggle('hidden', !hayBloqueo);
+        return !hayBloqueo;
+    }
+
+    document.getElementById('formGuia')?.addEventListener('submit', function(e) {
+        if (!validarStockGuia()) {
+            e.preventDefault();
+            if (window.showToast) window.showToast('No puedes emitir una guía con cantidades superiores al stock disponible.', 'error', 'Stock Insuficiente');
+        }
+    });
 });
 </script>
 

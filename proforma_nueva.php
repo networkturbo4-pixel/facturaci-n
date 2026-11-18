@@ -56,7 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $conn->commit();
-                $success_msg = "Proforma $numero creada exitosamente.";
+                $_SESSION['flash_proforma'] = "Proforma $numero creada exitosamente.";
+                header("Location: proformas.php");
+                exit;
             } catch (Exception $e) {
                 if ($conn->inTransaction()) {
                     $conn->rollBack();
