@@ -8,7 +8,7 @@
  */
 
 require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/greenter_service.php';
+require_once __DIR__ . '/enviar_sunat.php';
 
 $isCli = (php_sapi_name() === 'cli');
 
@@ -61,7 +61,7 @@ try {
         ];
 
         try {
-            $res = enviarComprobanteGreenter($cId, $conn);
+            $res = enviarComprobanteNubefact($cId, $conn);
             $report['procesados']++;
 
             if (!empty($res['success'])) {

@@ -267,8 +267,14 @@
             input.dispatchEvent(new CustomEvent('input', { bubbles: true, detail: { fromSelect: true } }));
             input.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { fromSelect: true } }));
 
-            // Desenfocar el campo para confirmar que la selección finalizó y no reabrirlo
-            input.blur();
+            // Mover el foco a la cantidad de la misma fila para agilizar la captura por teclado
+            const qtyInput = row ? row.querySelector('.item-qty') : null;
+            if (qtyInput) {
+                qtyInput.focus();
+                if (typeof qtyInput.select === 'function') qtyInput.select();
+            } else {
+                input.blur();
+            }
 
             setTimeout(() => {
                 isSelecting = false;
@@ -367,7 +373,111 @@
         });
     }
 
+    function findCatalogProduct(productsList, descOrCode) {
+        const q = (descOrCode || '').trim().toLowerCase();
+        if (!q || !Array.isArray(productsList)) return null;
+        return productsList.find(p =>
+            (p.descripcion || '').trim().toLowerCase() === q ||
+            (p.codigo || '').trim().toLowerCase() === q
+        ) || null;
+    }
+
+    function isServiceProduct(prod) {
+        if (!prod) return false;
+        const code = (prod.codigo || '').toUpperCase();
+        const um = (prod.unidad_medida || '').toUpperCase();
+        return um === 'ZZ' || code.startsWith('SRV');
+    }
+
+    function formatQtyNum(n) {
+        return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)));
+    }
+
+    /**
+     * Valida las cantidades en una tabla de ítems frente al stock del catálogo.
+     * @param {HTMLElement} tbody Contenedor de filas (.item-row)
+     * @param {Array} productsList Catálogo de productos
+     * @param {HTMLElement|null} targetRow Fila específica que disparó el cambio (opcional)
+     * @param {boolean} adjustValue Si es true, ajusta automáticamente al máximo disponible
+     * @returns {{ok: boolean, message?: string}}
+     */
+    function validateStockInTable(tbody, productsList, targetRow = null, adjustValue = true) {
+        if (!tbody || !Array.isArray(productsList)) return { ok: true };
+        const rows = Array.from(tbody.querySelectorAll('.item-row'));
+
+        const totalsByProdId = new Map();
+        const rowInfo = rows.map(r => {
+            const descInp = r.querySelector('.item-desc');
+            const qtyInp  = r.querySelector('.item-qty');
+            const prod = descInp ? findCatalogProduct(productsList, descInp.value) : null;
+            const qty  = qtyInp ? (parseFloat(qtyInp.value) || 0) : 0;
+            if (prod && !isServiceProduct(prod)) {
+                const pid = String(prod.id || prod.codigo || prod.descripcion);
+                totalsByProdId.set(pid, (totalsByProdId.get(pid) || 0) + qty);
+                if (qtyInp) {
+                    const st = Math.max(0, parseFloat(prod.stock) || 0);
+                    qtyInp.max = st;
+                }
+            } else if (qtyInp) {
+                qtyInp.removeAttribute('max');
+            }
+            return { row: r, descInp, qtyInp, prod, qty };
+        });
+
+        const checkEntry = (info) => {
+            if (!info.prod || isServiceProduct(info.prod) || !info.qtyInp) return null;
+            const stock = parseFloat(info.prod.stock) || 0;
+            const um = info.prod.unidad_medida || 'NIU';
+            const pid = String(info.prod.id || info.prod.codigo || info.prod.descripcion);
+            const totalSolicitado = totalsByProdId.get(pid) || 0;
+
+            if (info.qty > 0 && stock <= 0) {
+                const msg = `El producto "${info.prod.descripcion}" no tiene stock disponible (0 ${um} en inventario).`;
+                if (adjustValue) info.qtyInp.value = 0;
+                return { msg, info };
+            }
+            if (totalSolicitado > stock + 0.00001) {
+                const otrasFilas = totalSolicitado - info.qty;
+                const maxPermitido = Math.max(0, stock - otrasFilas);
+                const msg = `Stock insuficiente para "${info.prod.descripcion}": solo tienes ${formatQtyNum(stock)} ${um} en inventario.`;
+                if (adjustValue) {
+                    info.qtyInp.value = formatQtyNum(maxPermitido);
+                }
+                return { msg, info };
+            }
+            return null;
+        };
+
+        if (targetRow) {
+            const targetInfo = rowInfo.find(x => x.row === targetRow);
+            const err = targetInfo ? checkEntry(targetInfo) : null;
+            if (err) {
+                if (typeof window.showToast === 'function') {
+                    window.showToast(err.msg, 'warning', 'Stock Insuficiente');
+                }
+                return { ok: false, message: err.msg };
+            }
+            return { ok: true };
+        }
+
+        for (const info of rowInfo) {
+            const err = checkEntry(info);
+            if (err) {
+                if (typeof window.showToast === 'function') {
+                    window.showToast(err.msg, 'error', 'Stock Insuficiente');
+                }
+                if (err.info.qtyInp) {
+                    err.info.qtyInp.focus();
+                    err.info.qtyInp.select();
+                }
+                return { ok: false, message: err.msg };
+            }
+        }
+        return { ok: true };
+    }
+
     // Exportar al objeto global
     window.attachProductDropdown = attachProductDropdown;
+    window.validateStockInTable = validateStockInTable;
 
 })(window);

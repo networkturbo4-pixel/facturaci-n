@@ -120,8 +120,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn->beginTransaction();
 
                 $subtotal = 0;
+                $lineasParaValidar = [];
                 foreach ($qtys as $i => $q) {
-                    $subtotal += (float)$q * (float)($prices[$i] ?? 0);
+                    $qNum = (float)$q;
+                    $dStr = trim($descs[$i] ?? '');
+                    $subtotal += $qNum * (float)($prices[$i] ?? 0);
+                    if ($qNum > 0 && $dStr !== '') {
+                        $lineasParaValidar[] = ['desc' => $dStr, 'qty' => $qNum];
+                    }
+                }
+                $validacionStock = validarStockDisponible($conn, $lineasParaValidar);
+                if (!$validacionStock['ok']) {
+                    throw new Exception(implode(' ', $validacionStock['errores']));
                 }
                 $igv   = 0; // Exportación exonerada al 0%
                 $total = $subtotal;
@@ -1041,6 +1051,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 partidaInp.value = product.codigo_partida;
             }
 
+            if (typeof window.validateStockInTable === 'function') {
+                window.validateStockInTable(tbody, catalogoProductos, row, true);
+            }
             calcularTotales();
         });
     }
@@ -1122,8 +1135,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- Delegación de eventos para inputs numéricos y eliminación ---
     tbody.addEventListener('input', function (e) {
-        if (e.target.classList.contains('item-qty') || e.target.classList.contains('item-price')) {
+        const row = e.target.closest('.item-row');
+        if (e.target.classList.contains('item-qty') || e.target.classList.contains('item-desc')) {
+            if (row && typeof window.validateStockInTable === 'function') {
+                window.validateStockInTable(tbody, catalogoProductos, row, true);
+            }
             calcularTotales();
+        } else if (e.target.classList.contains('item-price')) {
+            calcularTotales();
+        }
+    });
+
+    document.getElementById('form_exportacion')?.addEventListener('submit', function (e) {
+        if (typeof window.validateStockInTable === 'function') {
+            const res = window.validateStockInTable(tbody, catalogoProductos, null, false);
+            if (!res.ok) {
+                e.preventDefault();
+                return false;
+            }
         }
     });
 

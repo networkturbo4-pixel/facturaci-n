@@ -130,12 +130,24 @@ if (empty($jsonRes['success'])) {
 $data = $jsonRes['data'] ?? [];
 $nombre = '';
 $direccion = '';
+$ubigeo = $data['ubigeo_sunat'] ?? $data['ubigeo_reniec'] ?? $data['ubigeo'] ?? '';
 
 if ($tipoDoc === 'DNI') {
     $nombre = $data['nombre_completo'] ?? trim(($data['nombres'] ?? '') . ' ' . ($data['apellido_paterno'] ?? '') . ' ' . ($data['apellido_materno'] ?? ''));
+    $direccion = $data['direccion_completa'] ?? $data['direccion'] ?? $data['domicilio'] ?? '';
 } else {
     $nombre = $data['nombre_o_razon_social'] ?? $data['razon_social'] ?? $data['nombre_completo'] ?? '';
-    $direccion = $data['direccion_completa'] ?? $data['direccion'] ?? '-';
+    $direccion = $data['direccion_completa'] ?? $data['direccion'] ?? $data['domicilio_fiscal'] ?? '';
+}
+
+$direccion = trim((string)$direccion);
+if ($direccion === '' || $direccion === '-') {
+    $partesGeo = array_filter([
+        trim((string)($data['distrito'] ?? '')),
+        trim((string)($data['provincia'] ?? '')),
+        trim((string)($data['departamento'] ?? ''))
+    ]);
+    $direccion = !empty($partesGeo) ? implode(' - ', $partesGeo) : '-';
 }
 
 echo json_encode([
@@ -145,6 +157,7 @@ echo json_encode([
         'numero'       => $numDoc,
         'razon_social' => $nombre,
         'direccion'    => $direccion,
+        'ubigeo'       => is_array($ubigeo) ? ($ubigeo[2] ?? '') : (string)$ubigeo,
         'estado'       => $data['estado'] ?? 'ACTIVO',
         'condicion'    => $data['condicion'] ?? 'HABIDO'
     ]

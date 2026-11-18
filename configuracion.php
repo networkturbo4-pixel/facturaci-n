@@ -1257,6 +1257,44 @@ include 'includes/header.php';
                                     </button>
                                 </div>
                             </div>
+
+                            <!-- PUNTOS DE PARTIDA Y LLEGADA PRE-REGISTRADOS (GUÍAS DE REMISIÓN) -->
+                            <div class="app-card overflow-hidden">
+                                <div class="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                            <i class="fa-solid fa-map-location-dot"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-base font-bold text-slate-900 dark:text-white">Puntos de Partida y Llegada (Guías de Remisión)</h3>
+                                            <p class="text-xs text-slate-500">Registra tus locales, almacenes y destinos frecuentes con ubicación en mapa y ubigeo.</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button" onclick="abrirModalCfgPunto('partida')" class="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                                            <i class="fa-solid fa-plus"></i><span>Punto de Partida</span>
+                                        </button>
+                                        <button type="button" onclick="abrirModalCfgPunto('llegada')" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                                            <i class="fa-solid fa-plus"></i><span>Punto de Llegada</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div>
+                                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-blue-700 dark:text-blue-300 mb-2.5 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-location-dot"></i> Puntos de Partida (Locales / Almacenes)
+                                        </h4>
+                                        <div id="lista_cfg_partida" class="space-y-2 text-xs text-slate-500">Cargando...</div>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 mb-2.5 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-flag-checkered"></i> Puntos de Llegada Frecuentes
+                                        </h4>
+                                        <div id="lista_cfg_llegada" class="space-y-2 text-xs text-slate-500">Cargando...</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- =================================================================== -->
@@ -2288,7 +2326,161 @@ async function subirPaqueteZipActualizacion(input) {
 
 document.addEventListener('DOMContentLoaded', () => {
     cargarEstadoActualizaciones();
+    cargarPuntosCfg();
 });
+</script>
+
+<!-- Modal Puntos de Traslado en Configuración -->
+<div id="modal_cfg_punto" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <h4 id="cfg_mp_titulo" class="text-sm font-extrabold text-slate-900 dark:text-white">Registrar Punto de Traslado</h4>
+            <button type="button" onclick="cerrarModalCfgPunto()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-5 space-y-3">
+            <input type="hidden" id="cfg_mp_tipo" value="partida">
+            <div>
+                <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Nombre / Alias del Local *</label>
+                <input type="text" id="cfg_mp_alias" placeholder="Ej. Almacén Central, Sucursal Norte..." class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-white">
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-[11px] font-bold uppercase text-slate-500">Dirección Exacta *</label>
+                    <button type="button" onclick="elegirMapaCfgPunto()" class="text-[11px] font-bold text-brand-600 hover:underline flex items-center gap-1">
+                        <i class="fa-solid fa-map-location-dot"></i> Elegir en Mapa
+                    </button>
+                </div>
+                <input type="text" id="cfg_mp_direccion" placeholder="Av. / Jr. / Calle..." class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-white">
+            </div>
+            <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Ubigeo (6 dígitos)</label>
+                    <input type="text" id="cfg_mp_ubigeo" maxlength="6" placeholder="150101" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Coordenadas</label>
+                    <input type="text" id="cfg_mp_coords" placeholder="-12.0464, -77.0428" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-[11px] font-mono text-slate-800 dark:text-white">
+                </div>
+            </div>
+        </div>
+        <div class="px-5 py-3.5 bg-slate-50 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+            <button type="button" onclick="cerrarModalCfgPunto()" class="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300">Cancelar</button>
+            <button type="button" onclick="guardarCfgPunto()" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold">Guardar Punto</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/mapa_ubigeo.js?v=<?php echo time(); ?>"></script>
+<script>
+async function cargarPuntosCfg() {
+    const contP = document.getElementById('lista_cfg_partida');
+    const contL = document.getElementById('lista_cfg_llegada');
+    if (!contP || !contL) return;
+    try {
+        const r = await fetch('api/puntos_traslado.php');
+        const j = await r.json();
+        if (!j.success) return;
+        renderListaPuntosCfg(contP, j.partida || [], 'partida');
+        renderListaPuntosCfg(contL, j.llegada || [], 'llegada');
+    } catch (e) {}
+}
+
+function renderListaPuntosCfg(cont, arr, tipo) {
+    if (!arr.length) {
+        cont.innerHTML = '<div class="p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-slate-400 text-center">No hay puntos registrados aún.</div>';
+        return;
+    }
+    cont.innerHTML = '';
+    arr.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 flex items-start justify-between gap-2';
+        div.innerHTML = `
+            <div class="min-w-0">
+                <p class="font-bold text-slate-800 dark:text-slate-100 truncate">${p.alias}</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">${p.direccion}</p>
+                <p class="text-[10px] font-mono text-slate-400 mt-0.5">Ubigeo: ${p.ubigeo || '—'}${p.lat && p.lng ? ` • ${p.lat}, ${p.lng}` : ''}</p>
+            </div>
+            <button type="button" onclick="eliminarCfgPunto('${tipo}', '${p.id}')" class="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/15 rounded-lg shrink-0" title="Eliminar">
+                <i class="fa-solid fa-trash-can text-xs"></i>
+            </button>
+        `;
+        cont.appendChild(div);
+    });
+}
+
+function abrirModalCfgPunto(tipo) {
+    document.getElementById('cfg_mp_tipo').value = tipo;
+    document.getElementById('cfg_mp_titulo').textContent = tipo === 'partida' ? 'Nuevo Punto de Partida' : 'Nuevo Punto de Llegada';
+    document.getElementById('cfg_mp_alias').value = '';
+    document.getElementById('cfg_mp_direccion').value = '';
+    document.getElementById('cfg_mp_ubigeo').value = '150101';
+    document.getElementById('cfg_mp_coords').value = '';
+    document.getElementById('modal_cfg_punto').classList.remove('hidden');
+}
+
+function cerrarModalCfgPunto() {
+    document.getElementById('modal_cfg_punto').classList.add('hidden');
+}
+
+function elegirMapaCfgPunto() {
+    const coordsParts = (document.getElementById('cfg_mp_coords').value || '').split(',');
+    window.abrirModalMapaUbigeo({
+        titulo: 'Ubicar Punto en el Mapa',
+        direccion: document.getElementById('cfg_mp_direccion').value,
+        ubigeo: document.getElementById('cfg_mp_ubigeo').value,
+        lat: coordsParts[0] ? parseFloat(coordsParts[0]) : null,
+        lng: coordsParts[1] ? parseFloat(coordsParts[1]) : null,
+        onConfirm: (res) => {
+            document.getElementById('cfg_mp_direccion').value = res.direccion || '';
+            document.getElementById('cfg_mp_ubigeo').value = res.ubigeo || '150101';
+            document.getElementById('cfg_mp_coords').value = (res.lat && res.lng) ? `${res.lat.toFixed(6)}, ${res.lng.toFixed(6)}` : '';
+        }
+    });
+}
+
+async function guardarCfgPunto() {
+    const tipo = document.getElementById('cfg_mp_tipo').value;
+    const alias = document.getElementById('cfg_mp_alias').value.trim();
+    const direccion = document.getElementById('cfg_mp_direccion').value.trim();
+    const ubigeo = document.getElementById('cfg_mp_ubigeo').value.trim();
+    const coordsParts = (document.getElementById('cfg_mp_coords').value || '').split(',');
+    const lat = coordsParts[0] ? parseFloat(coordsParts[0]) : null;
+    const lng = coordsParts[1] ? parseFloat(coordsParts[1]) : null;
+
+    if (!direccion) {
+        window.showToast('La dirección es obligatoria.', 'warning');
+        return;
+    }
+    try {
+        const r = await fetch('api/puntos_traslado.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save', tipo, alias, direccion, ubigeo, lat, lng })
+        });
+        const j = await r.json();
+        if (!j.success) throw new Error(j.message || 'Error');
+        cerrarModalCfgPunto();
+        await cargarPuntosCfg();
+        window.showToast('Punto guardado correctamente.', 'success');
+    } catch (e) {
+        window.showToast(e.message, 'error');
+    }
+}
+
+async function eliminarCfgPunto(tipo, id) {
+    try {
+        const r = await fetch('api/puntos_traslado.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete', tipo, id })
+        });
+        const j = await r.json();
+        if (j.success) {
+            await cargarPuntosCfg();
+            window.showToast('Punto eliminado.', 'info');
+        }
+    } catch (e) {}
+}
 </script>
 
 <?php include 'includes/footer.php'; ?>

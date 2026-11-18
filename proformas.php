@@ -181,6 +181,13 @@ include 'includes/sidebar.php';
                                             ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
                                         ?>
 
+                                        <!-- Convertir a Comprobante (1 clic) -->
+                                        <a href="factura_nueva.php?from_proforma=<?php echo (int)$p['id']; ?>" 
+                                           class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           title="Facturar / Emitir Comprobante desde esta Proforma">
+                                            <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
+                                        </a>
+
                                         <!-- Ver Vista Pública -->
                                         <a href="<?php echo $linkPublico; ?>" 
                                            target="_blank" 

@@ -21,14 +21,78 @@ try {
     }
 } catch (Exception $e) {}
 
-// Cargar clientes frecuentes para selección rápida en 1 clic
+// Cargar clientes frecuentes para buscador rápido en 1 clic
 $clientesCartera = [];
 try {
-    $stmtCli = $conn->query("SELECT tipo_documento, numero_documento, razon_social, direccion_fiscal FROM clientes ORDER BY razon_social ASC LIMIT 100");
+    $stmtCli = $conn->query("SELECT tipo_documento, numero_documento, razon_social, direccion_fiscal FROM clientes ORDER BY razon_social ASC LIMIT 500");
     if ($stmtCli) {
         $clientesCartera = $stmtCli->fetchAll(PDO::FETCH_ASSOC);
     }
 } catch (Exception $e) {}
+
+// Precarga desde Proforma (?from_proforma=ID) o Clonación (?clonar=ID)
+$prefill = [
+    'source_label'     => '',
+    'from_proforma_id' => 0,
+    'tipo'             => 'Factura Electrónica',
+    'serie'            => $serieFacturaDefault,
+    'moneda'           => 'PEN',
+    'doc'              => '',
+    'razon'            => '',
+    'dir'              => '',
+    'items'            => []
+];
+
+if (!empty($_GET['from_proforma'])) {
+    $profId = (int)$_GET['from_proforma'];
+    try {
+        $stP = $conn->prepare("SELECT * FROM proformas WHERE id = ? LIMIT 1");
+        $stP->execute([$profId]);
+        $prof = $stP->fetch(PDO::FETCH_ASSOC);
+        if ($prof) {
+            $stPL = $conn->prepare("SELECT cantidad, descripcion, precio_unitario FROM proforma_lineas WHERE proforma_id = ? ORDER BY id ASC");
+            $stPL->execute([$profId]);
+            $docP = trim($prof['cliente_documento'] ?? '');
+            $isRuc = strlen($docP) === 11;
+            $prefill = [
+                'source_label'     => 'Precargado desde Proforma ' . ($prof['numero'] ?? ('#' . $profId)),
+                'from_proforma_id' => $profId,
+                'tipo'             => $isRuc ? 'Factura Electrónica' : 'Boleta de Venta Electrónica',
+                'serie'            => $isRuc ? $serieFacturaDefault : $serieBoletaDefault,
+                'moneda'           => in_array($prof['moneda'] ?? 'PEN', ['PEN', 'USD']) ? $prof['moneda'] : 'PEN',
+                'doc'              => $docP,
+                'razon'            => $prof['cliente_razon_social'] ?? '',
+                'dir'              => $prof['cliente_direccion'] ?? '',
+                'items'            => $stPL->fetchAll(PDO::FETCH_ASSOC)
+            ];
+        }
+    } catch (Exception $e) {}
+} elseif (!empty($_GET['clonar'])) {
+    $cloneId = (int)$_GET['clonar'];
+    try {
+        $stC = $conn->prepare("SELECT * FROM comprobantes WHERE id = ? LIMIT 1");
+        $stC->execute([$cloneId]);
+        $compOrig = $stC->fetch(PDO::FETCH_ASSOC);
+        if ($compOrig) {
+            $stCL = $conn->prepare("SELECT cantidad, descripcion, precio_unitario FROM comprobante_lineas WHERE comprobante_id = ? ORDER BY id ASC");
+            $stCL->execute([$cloneId]);
+            $isFact = stripos($compOrig['tipo_comprobante'] ?? '', 'Factura') !== false;
+            $prefill = [
+                'source_label'     => 'Clonado de ' . ($compOrig['serie'] ?? '') . '-' . str_pad((string)($compOrig['correlativo'] ?? 0), 6, '0', STR_PAD_LEFT),
+                'from_proforma_id' => 0,
+                'tipo'             => $isFact ? 'Factura Electrónica' : 'Boleta de Venta Electrónica',
+                'serie'            => $isFact ? $serieFacturaDefault : $serieBoletaDefault,
+                'moneda'           => in_array($compOrig['moneda'] ?? 'PEN', ['PEN', 'USD']) ? $compOrig['moneda'] : 'PEN',
+                'doc'              => $compOrig['cliente_documento'] ?? '',
+                'razon'            => $compOrig['cliente_razon_social'] ?? '',
+                'dir'              => $compOrig['cliente_direccion'] ?? '',
+                'items'            => $stCL->fetchAll(PDO::FETCH_ASSOC)
+            ];
+        }
+    } catch (Exception $e) {}
+}
+
+$emitido_ok = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validate_csrf()) {
@@ -38,6 +102,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $serie  = $_POST['serie'] ?? $serieFacturaDefault;
         $fecha  = $_POST['fecha_emision'] ?? date('Y-m-d');
         $moneda = in_array($_POST['moneda'] ?? 'PEN', ['PEN', 'USD']) ? $_POST['moneda'] : 'PEN';
+        $tipoCambio = (float)($_POST['tipo_cambio'] ?? 1.0);
+        if ($tipoCambio <= 0) $tipoCambio = 1.0;
+        $incluyeIgv = !empty($_POST['precio_incluye_igv']);
+        $fromProformaId = (int)($_POST['from_proforma_id'] ?? 0);
+
         $doc    = trim($_POST['cliente_documento'] ?? '');
         $razon  = trim($_POST['cliente_razon_social'] ?? '');
         $dir    = trim($_POST['cliente_direccion'] ?? '-');
@@ -52,17 +121,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $conn->beginTransaction();
 
-                // Calcular totales en el backend (Precio Unitario base + IGV 18%)
-                $subtotal = 0;
+                // Calcular totales en el backend (soporta Precio Base o Precio con IGV incluido)
+                $subtotal = 0.0;
+                $totalConIgvSum = 0.0;
+                $lineasCalculadas = [];
                 foreach ($qtys as $index => $q) {
-                    $p = (float)($prices[$index] ?? 0);
-                    $subtotal += ((float)$q * $p);
-                }
-                $igv   = $subtotal * 0.18;
-                $total = $subtotal + $igv;
+                    $qNum = (float)$q;
+                    $pRaw = (float)($prices[$index] ?? 0);
+                    $dStr = trim($descs[$index] ?? '');
+                    if ($qNum <= 0 || $dStr === '') continue;
 
-                // Obtener el correlativo máximo de forma segura
-                $stmt = $conn->prepare("SELECT MAX(correlativo) as max_corr FROM comprobantes WHERE serie = ?");
+                    if ($incluyeIgv) {
+                        $lineTotalConIgv = round($qNum * $pRaw, 2);
+                        $lineSub = round($lineTotalConIgv / 1.18, 2);
+                        $pBase = $qNum > 0 ? round($lineSub / $qNum, 2) : 0.0;
+                        $subtotal += $lineSub;
+                        $totalConIgvSum += $lineTotalConIgv;
+                    } else {
+                        $pBase = $pRaw;
+                        $lineSub = round($qNum * $pBase, 2);
+                        $subtotal += $lineSub;
+                    }
+                    $lineasCalculadas[] = [
+                        'qty' => $qNum,
+                        'desc' => $dStr,
+                        'price' => $pBase,
+                        'total_linea' => $lineSub
+                    ];
+                }
+
+                $validacionStock = validarStockDisponible($conn, $lineasCalculadas);
+                if (!$validacionStock['ok']) {
+                    if ($conn->inTransaction()) {
+                        $conn->rollBack();
+                    }
+                    $error_msg = implode(' ', $validacionStock['errores']);
+                } else {
+                    if ($incluyeIgv) {
+                        $total = round($totalConIgvSum, 2);
+                        $igv   = round($total - $subtotal, 2);
+                    } else {
+                        $subtotal = round($subtotal, 2);
+                        $igv      = round($subtotal * 0.18, 2);
+                        $total    = round($subtotal + $igv, 2);
+                    }
+
+                // Obtener el correlativo máximo con bloqueo de fila (evita colisiones en concurrencia)
+                $stmt = $conn->prepare("SELECT MAX(correlativo) as max_corr FROM comprobantes WHERE serie = ? FOR UPDATE");
                 $stmt->execute([$serie]);
                 $row = $stmt->fetch();
                 $correlativo = ($row['max_corr'] ?? 0) + 1;
@@ -77,18 +182,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $comprobante_emitido_id = $comprobante_id;
                 $token_emitido = $token_publico;
 
+                if ($moneda === 'USD') {
+                    try {
+                        $stTc = $conn->prepare("UPDATE comprobantes SET tipo_cambio = ? WHERE id = ?");
+                        $stTc->execute([$tipoCambio, $comprobante_id]);
+                    } catch (Exception $e) {}
+                }
+
+                // Auto-registrar cliente nuevo en cartera si tiene RUC (11) o DNI (8) válido
+                if ($doc !== '00000000' && (strlen($doc) === 8 || strlen($doc) === 11)) {
+                    try {
+                        $tipoDocCli = strlen($doc) === 11 ? 'RUC' : 'DNI';
+                        $stCliIns = $conn->prepare("INSERT IGNORE INTO clientes (tipo_documento, numero_documento, razon_social, direccion_fiscal) VALUES (?, ?, ?, ?)");
+                        $stCliIns->execute([$tipoDocCli, $doc, $razon, $dir ?: '-']);
+                    } catch (Exception $e) {}
+                }
+
+                // Marcar proforma origen como Convertida si aplica
+                if ($fromProformaId > 0) {
+                    try {
+                        $stUpdProf = $conn->prepare("UPDATE proformas SET estado = 'Convertida', comprobante_id = ? WHERE id = ?");
+                        $stUpdProf->execute([$comprobante_id, $fromProformaId]);
+                    } catch (Exception $e) {}
+                }
+
                 // Insertar Líneas y descontar Stock / Lote FIFO
                 $stmt_line = $conn->prepare("INSERT INTO comprobante_lineas (comprobante_id, cantidad, descripcion, precio_unitario, total_linea) VALUES (?, ?, ?, ?, ?)");
                 $usrActual = currentUser();
-                foreach ($qtys as $index => $q) {
-                    $d  = trim($descs[$index] ?? '');
-                    $p  = (float)($prices[$index] ?? 0);
-                    $tl = (float)$q * $p;
-                    $stmt_line->execute([$comprobante_id, (float)$q, $d, $p, $tl]);
-                    descontarStockPorVenta($conn, $d, (float)$q, $numero_emitido, $usrActual['nombre'] ?? 'Sistema', (int)$comprobante_id);
+                foreach ($lineasCalculadas as $lin) {
+                    $stmt_line->execute([$comprobante_id, $lin['qty'], $lin['desc'], $lin['price'], $lin['total_linea']]);
+                    descontarStockPorVenta($conn, $lin['desc'], $lin['qty'], $numero_emitido, $usrActual['nombre'] ?? 'Sistema', (int)$comprobante_id);
                 }
 
                 $conn->commit();
+                $emitido_ok = true;
                 $success_msg = "Comprobante {$numero_emitido} emitido correctamente.";
 
                 // Despachar a SUNAT con Plan de Contingencia
@@ -104,6 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } catch (Throwable $eSunat) {
                     $success_msg .= " | SUNAT: 🛡️ Guardado en contingencia (" . $eSunat->getMessage() . ").";
+                }
                 }
             } catch (Exception $e) {
                 if ($conn->inTransaction()) {
@@ -169,9 +297,20 @@ include 'includes/header.php';
                 </div>
             <?php endif; ?>
 
+            <?php if (!empty($prefill['source_label'])): ?>
+                <div class="p-3.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 text-indigo-800 dark:text-indigo-200 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3 shadow-xs">
+                    <div class="flex items-center gap-2.5">
+                        <i class="fa-solid fa-wand-magic-sparkles text-indigo-500 text-sm"></i>
+                        <span><?php echo htmlspecialchars($prefill['source_label']); ?> — Revisa los datos y presiona <strong>Emitir Comprobante</strong> (o <kbd class="px-1.5 py-0.5 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-slate-700 rounded font-mono text-[10px]">Ctrl+Enter</kbd>).</span>
+                    </div>
+                    <a href="factura_nueva.php" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0">Empezar en blanco</a>
+                </div>
+            <?php endif; ?>
+
             <form method="POST" action="" id="formEmitirCpe">
                 <?php echo csrf_field(); ?>
-                <input type="hidden" name="tipo_comprobante" id="inp_tipo_comprobante" value="Factura Electrónica">
+                <input type="hidden" name="tipo_comprobante" id="inp_tipo_comprobante" value="<?php echo htmlspecialchars($prefill['tipo']); ?>">
+                <input type="hidden" name="from_proforma_id" value="<?php echo (int)$prefill['from_proforma_id']; ?>">
 
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
 
@@ -226,8 +365,8 @@ include 'includes/header.php';
                                 <div>
                                     <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">Serie Activa</label>
                                     <select name="serie" id="sel_serie" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 dark:text-white focus:outline-none focus:border-brand-500">
-                                        <option value="<?php echo htmlspecialchars($serieFacturaDefault); ?>"><?php echo htmlspecialchars($serieFacturaDefault); ?> (Factura)</option>
-                                        <option value="<?php echo htmlspecialchars($serieBoletaDefault); ?>"><?php echo htmlspecialchars($serieBoletaDefault); ?> (Boleta)</option>
+                                        <option value="<?php echo htmlspecialchars($serieFacturaDefault); ?>" <?php echo $prefill['serie'] === $serieFacturaDefault ? 'selected' : ''; ?>><?php echo htmlspecialchars($serieFacturaDefault); ?> (Factura)</option>
+                                        <option value="<?php echo htmlspecialchars($serieBoletaDefault); ?>" <?php echo $prefill['serie'] === $serieBoletaDefault ? 'selected' : ''; ?>><?php echo htmlspecialchars($serieBoletaDefault); ?> (Boleta)</option>
                                     </select>
                                 </div>
 
@@ -239,9 +378,24 @@ include 'includes/header.php';
                                 <div class="col-span-2 sm:col-span-1">
                                     <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">Moneda</label>
                                     <select name="moneda" id="sel_moneda_cpe" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-brand-500">
-                                        <option value="PEN" data-symbol="S/">PEN (S/) — Soles</option>
-                                        <option value="USD" data-symbol="$">USD ($) — Dólares</option>
+                                        <option value="PEN" data-symbol="S/" <?php echo $prefill['moneda'] === 'PEN' ? 'selected' : ''; ?>>PEN (S/) — Soles</option>
+                                        <option value="USD" data-symbol="$" <?php echo $prefill['moneda'] === 'USD' ? 'selected' : ''; ?>>USD ($) — Dólares</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            <!-- Tipo de Cambio BCRP automático (visible solo en USD) -->
+                            <div id="box_tipo_cambio" class="<?php echo $prefill['moneda'] === 'USD' ? '' : 'hidden'; ?> mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                    <span class="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">BCRP</span>
+                                    <span>Tipo de Cambio Venta:</span>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-xs font-mono text-slate-400">S/</span>
+                                    <input type="number" name="tipo_cambio" id="inp_tipo_cambio" step="0.001" min="1" value="3.750" class="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-slate-800 dark:text-white text-right focus:outline-none focus:border-brand-500">
+                                    <button type="button" id="btn_refresh_tc" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors" title="Actualizar T.C. desde BCRP">
+                                        <i class="fa-solid fa-rotate"></i>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -278,7 +432,7 @@ include 'includes/header.php';
                                             <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                                                 <i class="fa-solid fa-id-card text-xs"></i>
                                             </span>
-                                            <input type="text" id="num_doc" name="cliente_documento" maxlength="11" inputmode="numeric" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-l-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:bg-white focus:border-brand-500" placeholder="Ingrese RUC (11) o DNI (8)..." required>
+                                            <input type="text" id="num_doc" name="cliente_documento" maxlength="11" inputmode="numeric" value="<?php echo htmlspecialchars($prefill['doc']); ?>" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-l-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:bg-white focus:border-brand-500" placeholder="Ingrese RUC (11) o DNI (8)..." required>
                                         </div>
                                         <button type="button" id="btn_buscar_doc" class="px-3.5 sm:px-4 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-r-xl flex items-center gap-1.5 transition-colors shrink-0">
                                             <i id="icon_buscar" class="fa-solid fa-magnifying-glass"></i>
@@ -287,19 +441,15 @@ include 'includes/header.php';
                                     </div>
                                 </div>
 
-                                <div class="md:col-span-5">
-                                    <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">O elegir de tu Cartera</label>
-                                    <select id="sel_cliente_cartera" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-brand-500">
-                                        <option value="">— Seleccionar cliente registrado —</option>
-                                        <?php foreach ($clientesCartera as $cli): ?>
-                                            <option value="<?php echo htmlspecialchars($cli['numero_documento']); ?>"
-                                                    data-razon="<?php echo htmlspecialchars($cli['razon_social']); ?>"
-                                                    data-dir="<?php echo htmlspecialchars($cli['direccion_fiscal'] ?? ''); ?>"
-                                                    data-tipo="<?php echo htmlspecialchars($cli['tipo_documento']); ?>">
-                                                <?php echo htmlspecialchars($cli['numero_documento'] . ' — ' . $cli['razon_social']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                <div class="md:col-span-5 relative">
+                                    <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">Buscar en tu Cartera</label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                                            <i class="fa-solid fa-address-book text-xs"></i>
+                                        </span>
+                                        <input type="text" id="inp_buscar_cartera" autocomplete="off" placeholder="Escribe RUC, DNI o nombre..." class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-brand-500">
+                                    </div>
+                                    <div id="dropdown_cartera" class="hidden absolute left-0 right-0 top-full mt-1.5 z-50 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-1.5 space-y-1"></div>
                                 </div>
                             </div>
 
@@ -311,7 +461,7 @@ include 'includes/header.php';
                                         <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                                             <i class="fa-solid fa-building-user text-xs"></i>
                                         </span>
-                                        <input type="text" id="razon_social" name="cliente_razon_social" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm font-semibold text-slate-800 dark:text-white focus:outline-none focus:bg-white focus:border-brand-500" required placeholder="Nombre o Razón Social del receptor">
+                                        <input type="text" id="razon_social" name="cliente_razon_social" value="<?php echo htmlspecialchars($prefill['razon']); ?>" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm font-semibold text-slate-800 dark:text-white focus:outline-none focus:bg-white focus:border-brand-500" required placeholder="Nombre o Razón Social del receptor">
                                     </div>
                                 </div>
                                 <div>
@@ -320,7 +470,7 @@ include 'includes/header.php';
                                         <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                                             <i class="fa-solid fa-location-dot text-xs"></i>
                                         </span>
-                                        <input type="text" id="direccion" name="cliente_direccion" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm text-slate-800 dark:text-white focus:outline-none focus:bg-white focus:border-brand-500" placeholder="Dirección fiscal o domicilio">
+                                        <input type="text" id="direccion" name="cliente_direccion" value="<?php echo htmlspecialchars($prefill['dir']); ?>" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm text-slate-800 dark:text-white focus:outline-none focus:bg-white focus:border-brand-500" placeholder="Dirección fiscal o domicilio">
                                     </div>
                                 </div>
                             </div>
@@ -337,19 +487,15 @@ include 'includes/header.php';
                                     </div>
                                 </div>
 
-                                <!-- Selector Rápido para insertar producto del catálogo en 1 toque -->
+                                <!-- Escáner / Agregado Rápido POS por código o nombre + Enter -->
                                 <?php if (!empty($productosCatalogo)): ?>
-                                <div class="flex items-center gap-2 w-full sm:w-auto">
-                                    <select id="sel_quick_product" class="flex-1 sm:w-64 bg-brand-50/70 dark:bg-slate-800 border border-brand-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-brand-900 dark:text-slate-200 focus:outline-none focus:border-brand-500">
-                                        <option value="">⚡ + Insertar producto del catálogo...</option>
-                                        <?php foreach ($productosCatalogo as $prod): ?>
-                                            <option value="<?php echo htmlspecialchars($prod['descripcion']); ?>"
-                                                    data-price="<?php echo number_format((float)$prod['precio_unitario'], 2, '.', ''); ?>"
-                                                    data-code="<?php echo htmlspecialchars($prod['codigo']); ?>">
-                                                <?php echo htmlspecialchars($prod['codigo'] . ' — ' . $prod['descripcion'] . ' (S/ ' . number_format((float)$prod['precio_unitario'], 2) . ')'); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                <div class="flex items-center gap-2 w-full sm:w-80">
+                                    <div class="relative flex-1">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-amber-500">
+                                            <i class="fa-solid fa-barcode text-xs"></i>
+                                        </span>
+                                        <input type="text" id="inp_pos_fast_add" placeholder="Código o producto + Enter..." autocomplete="off" class="w-full bg-brand-50/70 dark:bg-slate-800 border border-brand-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-2 text-xs font-semibold text-brand-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20">
+                                    </div>
                                 </div>
                                 <?php endif; ?>
                             </div>
@@ -428,12 +574,16 @@ include 'includes/header.php';
                                 </table>
                             </div>
 
-                            <div class="flex items-center justify-between gap-3">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
                                 <button type="button" id="btn_add_row" class="px-4 py-2.5 rounded-xl bg-brand-50 dark:bg-brand-500/15 hover:bg-brand-100 text-brand-700 dark:text-brand-300 text-xs font-extrabold transition-all inline-flex items-center gap-2">
                                     <i class="fa-solid fa-plus-circle"></i>
                                     <span>Agregar Nueva Línea</span>
+                                    <kbd class="hidden sm:inline px-1.5 py-0.5 text-[10px] font-mono bg-white/80 dark:bg-slate-800 border border-brand-200 dark:border-slate-700 rounded">F2</kbd>
                                 </button>
-                                <span class="text-[11px] text-slate-400 font-medium" id="lbl_items_count">1 línea(s) activa(s)</span>
+                                <div class="flex items-center gap-3 text-[11px] text-slate-400">
+                                    <span class="hidden md:inline"><kbd class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono text-[10px]">Ctrl+Enter</kbd> Emitir</span>
+                                    <span class="font-medium" id="lbl_items_count">1 línea(s) activa(s)</span>
+                                </div>
                             </div>
                         </div>
 
@@ -461,6 +611,15 @@ include 'includes/header.php';
 
                             <!-- Desglose Tributario -->
                             <div class="p-5 space-y-3.5">
+                                <!-- Toggle Modo de Precio (Base vs IGV Incluido) -->
+                                <label class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70 cursor-pointer select-none">
+                                    <div>
+                                        <span class="block text-[11px] font-bold text-slate-800 dark:text-slate-200">Precios incluyen IGV (18%)</span>
+                                        <span class="block text-[10px] text-slate-400">Desglosa la base imponible automáticamente</span>
+                                    </div>
+                                    <input type="checkbox" name="precio_incluye_igv" id="chk_incluye_igv" value="1" class="w-4 h-4 rounded text-brand-600 focus:ring-brand-500">
+                                </label>
+
                                 <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                                     <span>Operaciones Gravadas</span>
                                     <span class="font-mono font-bold text-slate-800 dark:text-slate-200" id="lbl_subtotal">S/ 0.00</span>
@@ -510,8 +669,11 @@ include 'includes/header.php';
 
 <script src="js/product_dropdown.js?v=<?php echo time(); ?>"></script>
 <script>
-// Catálogo de productos para el componente desplegable moderno
+// Catálogo de productos y clientes para autocompletado instantáneo
 const catalogoProductos = <?php echo json_encode($productosCatalogo, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+const clientesCartera   = <?php echo json_encode($clientesCartera, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+const PREFILL_DATA      = <?php echo json_encode($prefill, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+const EMITIDO_OK        = <?php echo $emitido_ok ? 'true' : 'false'; ?>;
 
 // Mapa de precios del catálogo para autocompletar instantáneamente
 const PRODUCTOS_PRECIOS = {
@@ -581,6 +743,7 @@ async function limpiarFormularioCpe() {
     const tbody = document.getElementById('items_table_body');
     const rows = tbody.querySelectorAll('.item-row');
     rows.forEach((r, idx) => { if (idx > 0) r.remove(); });
+    try { localStorage.removeItem('factusys_draft_cpe'); } catch (e) {}
     document.getElementById('badge_resumen_cliente').textContent = 'Cliente: Pendiente de completar';
     window.dispatchEvent(new Event('recalcular-cpe'));
     window.showToast('Formulario reiniciado.', 'info');
@@ -593,10 +756,49 @@ document.addEventListener('DOMContentLoaded', function() {
     const numDocInput  = document.getElementById('num_doc');
     const razonInput   = document.getElementById('razon_social');
     const dirInput     = document.getElementById('direccion');
-    const selCartera   = document.getElementById('sel_cliente_cartera');
+    const inpCartera   = document.getElementById('inp_buscar_cartera');
+    const dropCartera  = document.getElementById('dropdown_cartera');
     const selSerie     = document.getElementById('sel_serie');
     const selMoneda    = document.getElementById('sel_moneda_cpe');
-    const selQuickProd = document.getElementById('sel_quick_product');
+    const boxTc        = document.getElementById('box_tipo_cambio');
+    const inpTc        = document.getElementById('inp_tipo_cambio');
+    const btnRefreshTc = document.getElementById('btn_refresh_tc');
+    const chkInclIgv   = document.getElementById('chk_incluye_igv');
+    const inpPosFast   = document.getElementById('inp_pos_fast_add');
+    const DRAFT_KEY    = 'factusys_draft_cpe';
+
+    if (EMITIDO_OK) {
+        try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    }
+
+    async function cargarTipoCambioBcrp(showNotification = false) {
+        if (!inpTc) return;
+        const icon = btnRefreshTc ? btnRefreshTc.querySelector('i') : null;
+        if (icon) icon.classList.add('fa-spin');
+        try {
+            const res = await fetch('api/tipo_cambio_bcrp.php', { headers: { 'Accept': 'application/json' } });
+            const json = await res.json();
+            if (json && json.success && json.tc) {
+                inpTc.value = parseFloat(json.tc).toFixed(3);
+                if (showNotification && window.showToast) {
+                    window.showToast(json.message || ('T.C. actualizado: S/ ' + json.tc), 'info', 'Tipo de Cambio BCRP');
+                }
+            }
+        } catch (e) {}
+        if (icon) icon.classList.remove('fa-spin');
+    }
+
+    function syncMonedaUi() {
+        const isUsd = selMoneda && selMoneda.value === 'USD';
+        if (boxTc) {
+            boxTc.classList.toggle('hidden', !isUsd);
+            if (isUsd) cargarTipoCambioBcrp(false);
+        }
+    }
+
+    if (btnRefreshTc) {
+        btnRefreshTc.addEventListener('click', () => cargarTipoCambioBcrp(true));
+    }
 
     function getCurrencySymbol() {
         const opt = selMoneda.options[selMoneda.selectedIndex];
@@ -610,27 +812,64 @@ document.addEventListener('DOMContentLoaded', function() {
     razonInput.addEventListener('input', function() {
         const val = this.value.trim();
         document.getElementById('badge_resumen_cliente').textContent = val ? ('Cliente: ' + val) : 'Cliente: Pendiente de completar';
+        guardarBorrador();
     });
 
-    // Selección desde cartera en 1 clic
-    if (selCartera) {
-        selCartera.addEventListener('change', function() {
-            const opt = this.options[this.selectedIndex];
-            if (!opt || !opt.value) return;
-            const doc   = opt.value;
-            const razon = opt.getAttribute('data-razon') || '';
-            const dir   = opt.getAttribute('data-dir') || '-';
-            numDocInput.value = doc;
-            razonInput.value  = razon;
-            dirInput.value    = dir;
-            document.getElementById('badge_resumen_cliente').textContent = 'Cliente: ' + razon;
+    // Buscador instantáneo de cartera de clientes (RUC, DNI o Razón Social)
+    if (inpCartera && dropCartera) {
+        function renderCarteraDropdown(q) {
+            const term = (q || '').trim().toLowerCase();
+            const matches = term
+                ? clientesCartera.filter(c =>
+                    (c.numero_documento || '').toLowerCase().includes(term) ||
+                    (c.razon_social || '').toLowerCase().includes(term)
+                  ).slice(0, 15)
+                : clientesCartera.slice(0, 12);
 
-            if (doc.length === 11) {
-                seleccionarTipoCpe('Factura Electrónica', '<?php echo htmlspecialchars($serieFacturaDefault, ENT_QUOTES); ?>');
-            } else if (doc.length === 8) {
-                seleccionarTipoCpe('Boleta de Venta Electrónica', '<?php echo htmlspecialchars($serieBoletaDefault, ENT_QUOTES); ?>');
+            dropCartera.innerHTML = '';
+            if (matches.length === 0) {
+                dropCartera.innerHTML = '<div class="p-3 text-center text-[11px] text-slate-400">Sin clientes coincidentes. Usa SUNAT / RENIEC.</div>';
+            } else {
+                matches.forEach(c => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'w-full text-left px-3 py-2 rounded-lg hover:bg-brand-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between gap-2';
+                    btn.innerHTML = `
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">${c.razon_social}</p>
+                            <p class="text-[10px] font-mono text-slate-400">${c.tipo_documento || 'DOC'}: ${c.numero_documento}</p>
+                        </div>
+                        <i class="fa-solid fa-arrow-right text-[10px] text-slate-300"></i>
+                    `;
+                    btn.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                        const doc = c.numero_documento || '';
+                        numDocInput.value = doc;
+                        razonInput.value  = c.razon_social || '';
+                        dirInput.value    = c.direccion_fiscal || '-';
+                        inpCartera.value  = '';
+                        dropCartera.classList.add('hidden');
+                        document.getElementById('badge_resumen_cliente').textContent = 'Cliente: ' + (c.razon_social || '');
+                        if (doc.length === 11) {
+                            seleccionarTipoCpe('Factura Electrónica', '<?php echo htmlspecialchars($serieFacturaDefault, ENT_QUOTES); ?>');
+                        } else if (doc.length === 8) {
+                            seleccionarTipoCpe('Boleta de Venta Electrónica', '<?php echo htmlspecialchars($serieBoletaDefault, ENT_QUOTES); ?>');
+                        }
+                        guardarBorrador();
+                        window.showToast('Cliente cargado: ' + (c.razon_social || ''), 'success', 'Cartera');
+                    });
+                    dropCartera.appendChild(btn);
+                });
             }
-            window.showToast('Cliente cargado desde tu cartera: ' + razon, 'success', 'Cliente Seleccionado');
+            dropCartera.classList.remove('hidden');
+        }
+
+        inpCartera.addEventListener('focus', () => renderCarteraDropdown(inpCartera.value));
+        inpCartera.addEventListener('input', () => renderCarteraDropdown(inpCartera.value));
+        document.addEventListener('click', (e) => {
+            if (!inpCartera.contains(e.target) && !dropCartera.contains(e.target)) {
+                dropCartera.classList.add('hidden');
+            }
         });
     }
 
@@ -710,19 +949,33 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function calcularTotales() {
         let subtotal = 0;
+        let totalConIgvSum = 0;
+        const incluyeIgv = chkInclIgv && chkInclIgv.checked;
         const sym  = getCurrencySymbol();
         const rows = tbody.querySelectorAll('.item-row');
 
         rows.forEach(row => {
             const qty   = parseFloat(row.querySelector('.item-qty').value) || 0;
             const price = parseFloat(row.querySelector('.item-price').value) || 0;
-            const total = qty * price;
-            row.querySelector('.item-total').innerText = sym + ' ' + total.toFixed(2);
-            subtotal += total;
+            const lineRaw = qty * price;
+            row.querySelector('.item-total').innerText = sym + ' ' + lineRaw.toFixed(2);
+            if (incluyeIgv) {
+                const lineSub = lineRaw / 1.18;
+                subtotal += lineSub;
+                totalConIgvSum += lineRaw;
+            } else {
+                subtotal += lineRaw;
+            }
         });
 
-        const igv   = subtotal * 0.18;
-        const total = subtotal + igv;
+        let igv, total;
+        if (incluyeIgv) {
+            total = totalConIgvSum;
+            igv   = total - subtotal;
+        } else {
+            igv   = subtotal * 0.18;
+            total = subtotal + igv;
+        }
 
         lblSubtotal.innerText = sym + ' ' + subtotal.toFixed(2);
         lblIgv.innerText      = sym + ' ' + igv.toFixed(2);
@@ -730,10 +983,42 @@ document.addEventListener('DOMContentLoaded', function() {
         if (lblCount) {
             lblCount.textContent = rows.length + ' línea(s) activa(s)';
         }
+        guardarBorrador();
+    }
+
+    function guardarBorrador() {
+        if (PREFILL_DATA && PREFILL_DATA.source_label) return;
+        try {
+            const rows = [];
+            tbody.querySelectorAll('.item-row').forEach(r => {
+                rows.push({
+                    qty: r.querySelector('.item-qty').value,
+                    desc: r.querySelector('.item-desc').value,
+                    price: r.querySelector('.item-price').value
+                });
+            });
+            const draft = {
+                tipo: document.getElementById('inp_tipo_comprobante').value,
+                serie: selSerie.value,
+                moneda: selMoneda.value,
+                incluyeIgv: chkInclIgv ? chkInclIgv.checked : false,
+                doc: numDocInput.value,
+                razon: razonInput.value,
+                dir: dirInput.value,
+                rows: rows
+            };
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        } catch (e) {}
     }
 
     window.addEventListener('recalcular-cpe', calcularTotales);
-    selMoneda.addEventListener('change', calcularTotales);
+    selMoneda.addEventListener('change', function() {
+        syncMonedaUi();
+        calcularTotales();
+    });
+    if (chkInclIgv) {
+        chkInclIgv.addEventListener('change', calcularTotales);
+    }
 
     function crearFilaHtml(desc = '', price = '') {
         const sym = getCurrencySymbol();
@@ -812,6 +1097,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     priceInput.classList.remove('ring-2', 'ring-emerald-500', 'bg-emerald-50', 'dark:bg-emerald-500/20');
                 }, 600);
             }
+            if (typeof window.validateStockInTable === 'function') {
+                window.validateStockInTable(tbody, catalogoProductos, row, true);
+            }
             calcularTotales();
         });
     }
@@ -826,42 +1114,154 @@ document.addEventListener('DOMContentLoaded', function() {
         calcularTotales();
     });
 
-    // Inserción rápida desde el selector de catálogo
-    if (selQuickProd) {
-        selQuickProd.addEventListener('change', function() {
-            const opt = this.options[this.selectedIndex];
-            if (!opt || !opt.value) return;
-            const desc  = opt.value;
-            const price = opt.getAttribute('data-price') || '0.00';
+    // Modo POS / Lector de Código de Barras: agrega o suma cantidad en 1 Enter
+    if (inpPosFast) {
+        inpPosFast.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const q = this.value.trim().toLowerCase();
+            if (!q) return;
 
-            // Si la primera fila está vacía, la reutilizamos; si no, agregamos una nueva
-            const firstRow = tbody.querySelector('.item-row');
-            if (firstRow && !firstRow.querySelector('.item-desc').value.trim()) {
-                firstRow.querySelector('.item-desc').value  = desc;
-                firstRow.querySelector('.item-price').value = price;
-            } else {
-                const tr = crearFilaHtml(desc, price);
-                tbody.appendChild(tr);
+            const prod = catalogoProductos.find(p => (p.codigo || '').toLowerCase() === q)
+                      || catalogoProductos.find(p => (p.descripcion || '').toLowerCase().includes(q));
+
+            if (!prod) {
+                window.showToast('No se encontró producto con "' + this.value.trim() + '"', 'warning', 'Búsqueda Rápida');
+                return;
             }
+
+            const desc  = prod.descripcion;
+            const price = parseFloat(prod.precio_unitario || 0).toFixed(2);
+
+            // Si ya existe en la tabla, incrementar cantidad en +1
+            let existingRow = null;
+            tbody.querySelectorAll('.item-row').forEach(r => {
+                if ((r.querySelector('.item-desc').value || '').trim().toLowerCase() === desc.toLowerCase()) {
+                    existingRow = r;
+                }
+            });
+
+            let targetRow = existingRow;
+            if (existingRow) {
+                const qInp = existingRow.querySelector('.item-qty');
+                qInp.value = ((parseFloat(qInp.value) || 0) + 1);
+            } else {
+                const firstRow = tbody.querySelector('.item-row');
+                if (firstRow && !firstRow.querySelector('.item-desc').value.trim()) {
+                    firstRow.querySelector('.item-desc').value  = desc;
+                    firstRow.querySelector('.item-price').value = price;
+                    targetRow = firstRow;
+                } else {
+                    const tr = crearFilaHtml(desc, price);
+                    tbody.appendChild(tr);
+                    targetRow = tr;
+                }
+            }
+            this.value = '';
+            const stockCheck = typeof window.validateStockInTable === 'function'
+                ? window.validateStockInTable(tbody, catalogoProductos, targetRow, true)
+                : { ok: true };
             calcularTotales();
-            this.selectedIndex = 0;
-            window.showToast('Producto agregado: ' + desc, 'success', 'Catálogo');
+            if (stockCheck.ok) {
+                window.showToast('+1 ' + desc, 'success', 'Agregado Rápido');
+            }
         });
+    }
+
+    // Navegación fluida con Enter dentro de las filas (qty -> price -> nueva fila)
+    tbody.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        const row = e.target.closest('.item-row');
+        if (!row) return;
+        if (e.target.classList.contains('item-qty')) {
+            e.preventDefault();
+            const p = row.querySelector('.item-price');
+            if (p) { p.focus(); p.select(); }
+        } else if (e.target.classList.contains('item-price')) {
+            e.preventDefault();
+            const nextRow = row.nextElementSibling;
+            if (nextRow && nextRow.classList.contains('item-row')) {
+                nextRow.querySelector('.item-desc')?.focus();
+            } else {
+                btnAddRow.click();
+            }
+        }
+    });
+
+    // Atajos globales: F2 (Nueva línea) y Ctrl+Enter (Emitir comprobante)
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'F2') {
+            e.preventDefault();
+            btnAddRow.click();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('btn_submit_cpe')?.click();
+        }
+    });
+
+    // Hidratar desde Proforma / Clonación o Borrador localStorage
+    function hidratarFilas(items) {
+        if (!Array.isArray(items) || items.length === 0) return;
+        tbody.innerHTML = '';
+        items.forEach(it => {
+            const tr = crearFilaHtml(it.desc || it.descripcion || '', it.price !== undefined ? it.price : (it.precio_unitario || ''));
+            const qInp = tr.querySelector('.item-qty');
+            if (qInp && (it.qty || it.cantidad)) {
+                qInp.value = parseFloat(it.qty || it.cantidad);
+            }
+            tbody.appendChild(tr);
+        });
+    }
+
+    if (PREFILL_DATA && PREFILL_DATA.source_label) {
+        seleccionarTipoCpe(PREFILL_DATA.tipo, PREFILL_DATA.serie);
+        if (PREFILL_DATA.razon) {
+            document.getElementById('badge_resumen_cliente').textContent = 'Cliente: ' + PREFILL_DATA.razon;
+        }
+        hidratarFilas(PREFILL_DATA.items);
+        syncMonedaUi();
+    } else if (!EMITIDO_OK) {
+        try {
+            const rawDraft = localStorage.getItem(DRAFT_KEY);
+            if (rawDraft) {
+                const d = JSON.parse(rawDraft);
+                const hasContent = (d.doc || d.razon || (d.rows && d.rows.some(r => r.desc)));
+                if (hasContent) {
+                    if (d.tipo) seleccionarTipoCpe(d.tipo, d.serie);
+                    if (d.moneda) selMoneda.value = d.moneda;
+                    if (chkInclIgv && d.incluyeIgv) chkInclIgv.checked = true;
+                    if (d.doc) numDocInput.value = d.doc;
+                    if (d.razon) {
+                        razonInput.value = d.razon;
+                        document.getElementById('badge_resumen_cliente').textContent = 'Cliente: ' + d.razon;
+                    }
+                    if (d.dir) dirInput.value = d.dir;
+                    if (d.rows && d.rows.length > 0) hidratarFilas(d.rows);
+                    syncMonedaUi();
+                }
+            }
+        } catch (e) {}
     }
 
     // Autocompletar precio al elegir de datalist o escribir descripción exacta
     tbody.addEventListener('input', function(e) {
+        const row = e.target.closest('.item-row');
         if (e.target.classList.contains('item-desc')) {
             const key = e.target.value.trim().toLowerCase();
-            if (PRODUCTOS_PRECIOS[key] !== undefined) {
-                const row = e.target.closest('.item-row');
+            if (PRODUCTOS_PRECIOS[key] !== undefined && row) {
                 const priceInput = row.querySelector('.item-price');
                 if (!priceInput.value || parseFloat(priceInput.value) === 0) {
                     priceInput.value = PRODUCTOS_PRECIOS[key].toFixed(2);
                 }
             }
+            if (row && typeof window.validateStockInTable === 'function') {
+                window.validateStockInTable(tbody, catalogoProductos, row, true);
+            }
             calcularTotales();
         } else if (e.target.classList.contains('item-qty') || e.target.classList.contains('item-price')) {
+            if (e.target.classList.contains('item-qty') && row && typeof window.validateStockInTable === 'function') {
+                window.validateStockInTable(tbody, catalogoProductos, row, true);
+            }
             calcularTotales();
         }
     });
@@ -883,6 +1283,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const input = plusBtn.parentElement.querySelector('.item-qty');
             const curr  = parseFloat(input.value) || 0;
             input.value = (curr + 1).toFixed(curr % 1 === 0 ? 0 : 2);
+            const row = plusBtn.closest('.item-row');
+            if (row && typeof window.validateStockInTable === 'function') {
+                window.validateStockInTable(tbody, catalogoProductos, row, true);
+            }
             calcularTotales();
         } else if (removeBtn) {
             const row = removeBtn.closest('.item-row');
@@ -894,6 +1298,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    const formEmitirCpe = document.getElementById('formEmitirCpe');
+    if (formEmitirCpe) {
+        formEmitirCpe.addEventListener('submit', function(e) {
+            if (typeof window.validateStockInTable === 'function') {
+                const res = window.validateStockInTable(tbody, catalogoProductos, null, false);
+                if (!res.ok) {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+        });
+    }
 
     calcularTotales();
 });

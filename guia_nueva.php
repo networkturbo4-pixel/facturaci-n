@@ -1,6 +1,16 @@
 <?php 
 require_once 'includes/auth.php';
 requireLogin();
+
+// Cargar catálogo de productos activos para autocompletado y selección rápida
+$productosCatalogo = [];
+try {
+    $stmtProd = $conn->query("SELECT id, codigo, descripcion, unidad_medida, precio_unitario, stock, stock_minimo, lote_actual FROM productos WHERE estado = 'Activo' ORDER BY descripcion ASC");
+    if ($stmtProd) {
+        $productosCatalogo = $stmtProd->fetchAll(PDO::FETCH_ASSOC);
+    }
+} catch (Exception $e) {}
+
 include 'includes/header.php'; 
 ?>
 <?php include 'includes/sidebar.php'; ?>
@@ -61,26 +71,70 @@ include 'includes/header.php';
                     <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 hidden" id="datos_cliente_encontrado">
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">Razón Social / Nombres</label>
-                            <input type="text" id="razon_social" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm text-gray-800" readonly>
+                            <input type="text" id="razon_social" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none" placeholder="Editable...">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">Dirección (Llegada sugerida)</label>
-                            <input type="text" id="direccion" class="w-full bg-gray-50 border border-gray-300 rounded p-2 text-sm text-gray-800" readonly>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-sm text-gray-600">Dirección (Llegada sugerida)</label>
+                                <button type="button" id="btn_usar_dir_dest" class="text-[11px] font-bold text-emerald-600 hover:underline">
+                                    <i class="fa-solid fa-arrow-down mr-1"></i>Copiar a Punto de Llegada
+                                </button>
+                            </div>
+                            <input type="text" id="direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm text-gray-800 focus:border-brand-500 focus:outline-none" placeholder="Editable...">
                         </div>
                     </div>
                 </div>
 
                 <h4 class="text-sm font-semibold text-primary uppercase tracking-wider mb-4 border-b pb-2">3. Direcciones de Traslado</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100">
-                        <h5 class="font-medium text-blue-800 mb-3"><i class="fa-solid fa-location-dot mr-2"></i>Punto de Partida</h5>
-                        <input type="text" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm mb-2" placeholder="Dirección detallada...">
-                        <input type="text" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ubigeo (Ej. 150101)">
+                    <!-- PUNTO DE PARTIDA -->
+                    <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-200/80 space-y-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <h5 class="font-bold text-blue-900 text-sm"><i class="fa-solid fa-location-dot mr-1.5 text-blue-600"></i>Punto de Partida</h5>
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" onclick="abrirMapaPara('partida')" class="px-2.5 py-1 rounded-lg bg-white border border-blue-200 hover:bg-blue-100 text-blue-700 text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-colors" title="Elegir en mapa con pin">
+                                    <i class="fa-solid fa-map-location-dot"></i>
+                                    <span>Mapa</span>
+                                </button>
+                                <button type="button" onclick="abrirModalGuardarPunto('partida')" class="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-colors" title="Registrar nuevo punto de partida">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span>Nuevo</span>
+                                </button>
+                            </div>
+                        </div>
+                        <select id="sel_punto_partida" class="w-full bg-white border border-blue-200 rounded-lg p-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500">
+                            <option value="">— Elegir local / punto registrado —</option>
+                        </select>
+                        <input type="text" id="partida_direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección detallada de partida...">
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="partida_ubigeo" maxlength="6" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold" placeholder="Ubigeo (Ej. 150101)">
+                            <input type="text" id="partida_coords" class="w-full bg-white/80 border border-gray-300 rounded-lg p-2 text-[11px] font-mono text-slate-600" placeholder="Lat, Lng (opcional)">
+                        </div>
                     </div>
-                    <div class="bg-green-50/50 p-4 rounded-lg border border-green-100">
-                        <h5 class="font-medium text-green-800 mb-3"><i class="fa-solid fa-flag-checkered mr-2"></i>Punto de Llegada</h5>
-                        <input type="text" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm mb-2" placeholder="Dirección detallada de entrega...">
-                        <input type="text" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Ubigeo de llegada">
+
+                    <!-- PUNTO DE LLEGADA -->
+                    <div class="bg-green-50/50 p-4 rounded-xl border border-green-200/80 space-y-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <h5 class="font-bold text-green-900 text-sm"><i class="fa-solid fa-flag-checkered mr-1.5 text-green-600"></i>Punto de Llegada</h5>
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" onclick="abrirMapaPara('llegada')" class="px-2.5 py-1 rounded-lg bg-white border border-green-200 hover:bg-green-100 text-green-700 text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-colors" title="Elegir en mapa con pin">
+                                    <i class="fa-solid fa-map-location-dot"></i>
+                                    <span>Mapa</span>
+                                </button>
+                                <button type="button" onclick="abrirModalGuardarPunto('llegada')" class="px-2.5 py-1 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-colors" title="Registrar nuevo punto de llegada">
+                                    <i class="fa-solid fa-plus"></i>
+                                    <span>Nuevo</span>
+                                </button>
+                            </div>
+                        </div>
+                        <select id="sel_punto_llegada" class="w-full bg-white border border-green-200 rounded-lg p-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-green-500">
+                            <option value="">— Elegir punto de llegada frecuente —</option>
+                        </select>
+                        <input type="text" id="llegada_direccion" class="w-full bg-white border border-gray-300 rounded-lg p-2.5 text-sm" placeholder="Dirección detallada de entrega...">
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="llegada_ubigeo" maxlength="6" class="w-full bg-white border border-gray-300 rounded-lg p-2 text-xs font-mono font-bold" placeholder="Ubigeo de llegada">
+                            <input type="text" id="llegada_coords" class="w-full bg-white/80 border border-gray-300 rounded-lg p-2 text-[11px] font-mono text-slate-600" placeholder="Lat, Lng (opcional)">
+                        </div>
                     </div>
                 </div>
 
@@ -117,15 +171,46 @@ include 'includes/header.php';
                             </thead>
                             <tbody id="items_table_body">
                                 <tr class="border-b border-gray-100 item-row">
-                                    <td class="px-4 py-3"><input type="number" value="1" min="1" class="item-qty w-full border border-gray-300 rounded p-1 text-sm text-center"></td>
+                                    <td class="px-4 py-3"><input type="number" value="1" min="0.01" step="any" class="item-qty w-full border border-gray-300 rounded p-1.5 text-sm text-center"></td>
                                     <td class="px-4 py-3">
-                                        <select class="w-full border border-gray-300 rounded p-1 text-sm">
-                                            <option>NIU (Unidades)</option>
-                                            <option>KGM (Kilos)</option>
-                                            <option>LTR (Litros)</option>
+                                        <select class="item-unit w-full border border-gray-300 rounded p-1.5 text-sm">
+                                            <option value="NIU">NIU (Unidades)</option>
+                                            <option value="KGM">KGM (Kilos)</option>
+                                            <option value="LTR">LTR (Litros)</option>
+                                            <option value="MTR">MTR (Metros)</option>
+                                            <option value="ZZ">ZZ (Servicios / Otros)</option>
                                         </select>
                                     </td>
-                                    <td class="px-4 py-3"><input type="text" placeholder="Nombre del producto..." class="item-desc w-full border border-gray-300 rounded p-1 text-sm"></td>
+                                    <td class="px-4 py-3">
+                                        <div class="product-dropdown-wrapper relative w-full">
+                                            <div class="relative flex items-center">
+                                                <input type="text" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                                                <button type="button" tabindex="-1" class="btn-toggle-dropdown absolute right-2 text-gray-400 hover:text-blue-600 p-1 rounded transition-transform" title="Ver catálogo">
+                                                    <i class="fa-solid fa-chevron-down text-xs transition-transform duration-200"></i>
+                                                </button>
+                                            </div>
+                                            <div class="product-dropdown-menu hidden fixed z-50 min-w-[300px] max-w-[460px] w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
+                                                <div class="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                                    <div class="flex items-center gap-2">
+                                                        <div class="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 flex items-center justify-center text-[10px]">
+                                                            <i class="fa-solid fa-boxes-stacked"></i>
+                                                        </div>
+                                                        <span class="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">Catálogo de Productos</span>
+                                                    </div>
+                                                    <span class="dropdown-counter text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                                                        <?php echo count($productosCatalogo); ?> ítems
+                                                    </span>
+                                                </div>
+                                                <div class="product-items-list max-h-60 overflow-y-auto p-1.5 space-y-1"></div>
+                                                <div class="px-3 py-2 bg-slate-50/60 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                                                    <span><i class="fa-regular fa-keyboard mr-1"></i> Navega con ↑ ↓ y Enter</span>
+                                                    <a href="productos.php" target="_blank" class="text-blue-600 hover:underline flex items-center gap-1 font-semibold">
+                                                        <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> Catálogo
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
                                     <td class="px-4 py-3 text-red-500 cursor-pointer text-center btn-remove"><i class="fa-solid fa-trash pointer-events-none"></i></td>
                                 </tr>
                             </tbody>
@@ -145,8 +230,202 @@ include 'includes/header.php';
     </div>
 </main>
 
+<!-- Modal de Guardado Directo de Punto de Partida / Llegada -->
+<div id="modal_nuevo_punto_guia" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <h4 id="modal_punto_titulo" class="text-sm font-extrabold text-slate-900 dark:text-white">Registrar Punto de Traslado</h4>
+            <button type="button" onclick="cerrarModalPuntoGuia()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="p-5 space-y-3">
+            <input type="hidden" id="mp_tipo" value="partida">
+            <div>
+                <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Nombre / Alias del Local *</label>
+                <input type="text" id="mp_alias" placeholder="Ej. Almacén Ate, Tienda Miraflores..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold">
+            </div>
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-[11px] font-bold uppercase text-slate-500">Dirección Exacta *</label>
+                    <button type="button" onclick="elegirEnMapaParaModal()" class="text-[11px] font-bold text-brand-600 hover:underline flex items-center gap-1">
+                        <i class="fa-solid fa-map-location-dot"></i> Elegir en Mapa
+                    </button>
+                </div>
+                <input type="text" id="mp_direccion" placeholder="Av. / Jr. / Calle..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
+            </div>
+            <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Ubigeo (6 dígitos)</label>
+                    <input type="text" id="mp_ubigeo" maxlength="6" placeholder="150101" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Coordenadas</label>
+                    <input type="text" id="mp_coords" placeholder="-12.0464, -77.0428" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-mono">
+                </div>
+            </div>
+        </div>
+        <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+            <button type="button" onclick="cerrarModalPuntoGuia()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600">Cancelar</button>
+            <button type="button" id="btn_guardar_punto_guia" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold">Guardar y Usar</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/mapa_ubigeo.js?v=<?php echo time(); ?>"></script>
+<script src="js/product_dropdown.js?v=<?php echo time(); ?>"></script>
 <script>
+const catalogoProductos = <?php echo json_encode($productosCatalogo, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+let PUNTOS_TRASLADO = { partida: [], llegada: [], empresa_default: null };
+
+async function cargarPuntosTraslado() {
+    try {
+        const res = await fetch('api/puntos_traslado.php');
+        const json = await res.json();
+        if (!json || !json.success) return;
+        PUNTOS_TRASLADO = json;
+
+        const selP = document.getElementById('sel_punto_partida');
+        const selL = document.getElementById('sel_punto_llegada');
+
+        if (selP) {
+            selP.innerHTML = '<option value="">— Elegir local / punto de partida —</option>';
+            if (json.empresa_default && json.empresa_default.direccion) {
+                const optDef = document.createElement('option');
+                optDef.value = 'empresa_default';
+                optDef.textContent = '🏢 ' + json.empresa_default.alias + ' — ' + json.empresa_default.direccion;
+                selP.appendChild(optDef);
+            }
+            (json.partida || []).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `📍 ${p.alias} (${p.ubigeo || ''}) — ${p.direccion}`;
+                selP.appendChild(opt);
+            });
+        }
+
+        if (selL) {
+            selL.innerHTML = '<option value="">— Elegir punto de llegada frecuente —</option>';
+            (json.llegada || []).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = `🏁 ${p.alias} (${p.ubigeo || ''}) — ${p.direccion}`;
+                selL.appendChild(opt);
+            });
+        }
+    } catch (e) {}
+}
+
+function aplicarPuntoEnCampos(tipo, p) {
+    if (!p) return;
+    document.getElementById(tipo + '_direccion').value = p.direccion || '';
+    document.getElementById(tipo + '_ubigeo').value    = p.ubigeo || '';
+    document.getElementById(tipo + '_coords').value    = (p.lat && p.lng) ? `${p.lat}, ${p.lng}` : '';
+}
+
+function abrirMapaPara(tipo) {
+    const coordsVal = (document.getElementById(tipo + '_coords').value || '').split(',');
+    window.abrirModalMapaUbigeo({
+        titulo: tipo === 'partida' ? 'Ubicar Punto de Partida en el Mapa' : 'Ubicar Punto de Llegada en el Mapa',
+        direccion: document.getElementById(tipo + '_direccion').value,
+        ubigeo: document.getElementById(tipo + '_ubigeo').value,
+        lat: coordsVal[0] ? parseFloat(coordsVal[0]) : null,
+        lng: coordsVal[1] ? parseFloat(coordsVal[1]) : null,
+        onConfirm: (res) => {
+            aplicarPuntoEnCampos(tipo, res);
+            if (window.showToast) window.showToast('Dirección, ubigeo y coordenadas completados desde el mapa.', 'success');
+        }
+    });
+}
+
+function abrirModalGuardarPunto(tipo) {
+    document.getElementById('mp_tipo').value = tipo;
+    document.getElementById('modal_punto_titulo').textContent = tipo === 'partida' ? 'Registrar Nuevo Punto de Partida' : 'Registrar Nuevo Punto de Llegada';
+    document.getElementById('mp_alias').value = '';
+    document.getElementById('mp_direccion').value = document.getElementById(tipo + '_direccion').value || '';
+    document.getElementById('mp_ubigeo').value    = document.getElementById(tipo + '_ubigeo').value || '150101';
+    document.getElementById('mp_coords').value    = document.getElementById(tipo + '_coords').value || '';
+    document.getElementById('modal_nuevo_punto_guia').classList.remove('hidden');
+}
+
+function cerrarModalPuntoGuia() {
+    document.getElementById('modal_nuevo_punto_guia').classList.add('hidden');
+}
+
+function elegirEnMapaParaModal() {
+    const coordsVal = (document.getElementById('mp_coords').value || '').split(',');
+    window.abrirModalMapaUbigeo({
+        titulo: 'Seleccionar Ubicación del Nuevo Punto',
+        direccion: document.getElementById('mp_direccion').value,
+        ubigeo: document.getElementById('mp_ubigeo').value,
+        lat: coordsVal[0] ? parseFloat(coordsVal[0]) : null,
+        lng: coordsVal[1] ? parseFloat(coordsVal[1]) : null,
+        onConfirm: (res) => {
+            document.getElementById('mp_direccion').value = res.direccion || '';
+            document.getElementById('mp_ubigeo').value = res.ubigeo || '150101';
+            document.getElementById('mp_coords').value = (res.lat && res.lng) ? `${res.lat.toFixed(6)}, ${res.lng.toFixed(6)}` : '';
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    cargarPuntosTraslado();
+
+    document.getElementById('sel_punto_partida')?.addEventListener('change', function() {
+        const val = this.value;
+        if (!val) return;
+        if (val === 'empresa_default') {
+            aplicarPuntoEnCampos('partida', PUNTOS_TRASLADO.empresa_default);
+        } else {
+            const found = (PUNTOS_TRASLADO.partida || []).find(p => p.id === val);
+            aplicarPuntoEnCampos('partida', found);
+        }
+    });
+
+    document.getElementById('sel_punto_llegada')?.addEventListener('change', function() {
+        const val = this.value;
+        if (!val) return;
+        const found = (PUNTOS_TRASLADO.llegada || []).find(p => p.id === val);
+        aplicarPuntoEnCampos('llegada', found);
+    });
+
+    document.getElementById('btn_usar_dir_dest')?.addEventListener('click', function() {
+        const dir = document.getElementById('direccion')?.value || '';
+        if (dir && dir !== '-') {
+            document.getElementById('llegada_direccion').value = dir;
+            if (window.showToast) window.showToast('Dirección del destinatario copiada a Punto de Llegada.', 'info');
+        }
+    });
+
+    document.getElementById('btn_guardar_punto_guia')?.addEventListener('click', async function() {
+        const tipo = document.getElementById('mp_tipo').value;
+        const alias = document.getElementById('mp_alias').value.trim();
+        const direccion = document.getElementById('mp_direccion').value.trim();
+        const ubigeo = document.getElementById('mp_ubigeo').value.trim();
+        const coordsParts = (document.getElementById('mp_coords').value || '').split(',');
+        const lat = coordsParts[0] ? parseFloat(coordsParts[0]) : null;
+        const lng = coordsParts[1] ? parseFloat(coordsParts[1]) : null;
+
+        if (!direccion) {
+            if (window.showToast) window.showToast('Ingrese la dirección del punto.', 'warning');
+            return;
+        }
+
+        try {
+            const r = await fetch('api/puntos_traslado.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'save', tipo, alias, direccion, ubigeo, lat, lng })
+            });
+            const j = await r.json();
+            if (!j.success) throw new Error(j.message || 'No se pudo guardar.');
+            aplicarPuntoEnCampos(tipo, j.punto);
+            await cargarPuntosTraslado();
+            cerrarModalPuntoGuia();
+            if (window.showToast) window.showToast('Punto guardado en configuración y aplicado a la guía.', 'success');
+        } catch (err) {
+            if (window.showToast) window.showToast(err.message, 'error');
+        }
+    });
+
     // ---- BÚSQUEDA DE DESTINATARIO (API) ----
     const btnBuscarDoc = document.getElementById('btn_buscar_doc');
     const iconBuscar = document.getElementById('icon_buscar');
@@ -196,27 +475,87 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // ---- AGREGAR LÍNEAS DINÁMICAS ----
+    // ---- AGREGAR LÍNEAS DINÁMICAS Y DESPLEGABLE DE PRODUCTOS ----
     const tbody = document.getElementById('items_table_body');
     const btnAddRow = document.getElementById('btn_add_row');
+
+    function initGuiaRowDropdown(rowElement) {
+        const wrapper = rowElement.querySelector('.product-dropdown-wrapper');
+        if (!wrapper || typeof window.attachProductDropdown !== 'function') return;
+        window.attachProductDropdown(wrapper, catalogoProductos, function(product, row) {
+            if (!product || !row) return;
+            const unitSel = row.querySelector('.item-unit');
+            if (unitSel && product.unidad_medida) {
+                const um = product.unidad_medida.toUpperCase();
+                let found = false;
+                for (let i = 0; i < unitSel.options.length; i++) {
+                    if (unitSel.options[i].value.toUpperCase() === um) {
+                        unitSel.selectedIndex = i;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    unitSel.add(new Option(um, um, true, true));
+                }
+            }
+        });
+    }
+
+    if (tbody) {
+        tbody.querySelectorAll('.item-row').forEach(initGuiaRowDropdown);
+    }
 
     if (btnAddRow && tbody) {
         btnAddRow.addEventListener('click', function() {
             const tr = document.createElement('tr');
             tr.className = 'border-b border-gray-100 item-row';
             tr.innerHTML = `
-                <td class="px-4 py-3"><input type="number" value="1" min="1" class="item-qty w-full border border-gray-300 rounded p-1 text-sm text-center"></td>
+                <td class="px-4 py-3"><input type="number" value="1" min="0.01" step="any" class="item-qty w-full border border-gray-300 rounded p-1.5 text-sm text-center"></td>
                 <td class="px-4 py-3">
-                    <select class="w-full border border-gray-300 rounded p-1 text-sm">
-                        <option>NIU (Unidades)</option>
-                        <option>KGM (Kilos)</option>
-                        <option>LTR (Litros)</option>
+                    <select class="item-unit w-full border border-gray-300 rounded p-1.5 text-sm">
+                        <option value="NIU">NIU (Unidades)</option>
+                        <option value="KGM">KGM (Kilos)</option>
+                        <option value="LTR">LTR (Litros)</option>
+                        <option value="MTR">MTR (Metros)</option>
+                        <option value="ZZ">ZZ (Servicios / Otros)</option>
                     </select>
                 </td>
-                <td class="px-4 py-3"><input type="text" placeholder="Nombre del producto..." class="item-desc w-full border border-gray-300 rounded p-1 text-sm"></td>
+                <td class="px-4 py-3">
+                    <div class="product-dropdown-wrapper relative w-full">
+                        <div class="relative flex items-center">
+                            <input type="text" placeholder="Escribe o busca del catálogo..." autocomplete="off" class="item-desc w-full border border-gray-300 rounded-lg pl-3 pr-8 py-1.5 text-sm focus:outline-none focus:border-blue-500">
+                            <button type="button" tabindex="-1" class="btn-toggle-dropdown absolute right-2 text-gray-400 hover:text-blue-600 p-1 rounded transition-transform" title="Ver catálogo">
+                                <i class="fa-solid fa-chevron-down text-xs transition-transform duration-200"></i>
+                            </button>
+                        </div>
+                        <div class="product-dropdown-menu hidden fixed z-50 min-w-[300px] max-w-[460px] w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl transition-all">
+                            <div class="px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-5 h-5 rounded-md bg-blue-500/10 text-blue-600 flex items-center justify-center text-[10px]">
+                                        <i class="fa-solid fa-boxes-stacked"></i>
+                                    </div>
+                                    <span class="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">Catálogo de Productos</span>
+                                </div>
+                                <span class="dropdown-counter text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                                    ${catalogoProductos.length} ítems
+                                </span>
+                            </div>
+                            <div class="product-items-list max-h-60 overflow-y-auto p-1.5 space-y-1"></div>
+                            <div class="px-3 py-2 bg-slate-50/60 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                                <span><i class="fa-regular fa-keyboard mr-1"></i> Navega con ↑ ↓ y Enter</span>
+                                <a href="productos.php" target="_blank" class="text-blue-600 hover:underline flex items-center gap-1 font-semibold">
+                                    <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> Catálogo
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </td>
                 <td class="px-4 py-3 text-red-500 cursor-pointer text-center btn-remove"><i class="fa-solid fa-trash pointer-events-none"></i></td>
             `;
             tbody.appendChild(tr);
+            initGuiaRowDropdown(tr);
+            tr.querySelector('.item-desc')?.focus();
         });
 
         tbody.addEventListener('click', function(e) {

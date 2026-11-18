@@ -18,7 +18,7 @@ include 'includes/header.php';
 include 'includes/sidebar.php';
 ?>
 
-<main class="flex-1 flex flex-col h-full bg-slate-50/70 overflow-hidden">
+<main class="flex-1 flex flex-col h-full bg-slate-50/70 dark:bg-slate-950 overflow-hidden">
     <?php 
     $pageTitle = 'Comprobantes de Pago';
     include 'includes/topbar.php'; 
@@ -58,13 +58,16 @@ include 'includes/sidebar.php';
                     type="text" 
                     id="searchComprobantes" 
                     placeholder="Buscar por serie, cliente o DNI/RUC..." 
-                    class="w-full bg-white border border-slate-200 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 shadow-xs transition-all"
+                    class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-2 pl-9 pr-3 text-xs text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 shadow-xs transition-all"
                 >
             </div>
-            <div class="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-medium text-slate-600 self-start sm:self-auto">
-                <button class="px-3 py-1.5 rounded-lg bg-white shadow-xs font-semibold text-slate-900">Todos (<?php echo count($comprobantes); ?>)</button>
-                <button class="px-3 py-1.5 rounded-lg hover:text-slate-900 transition-colors">Facturas</button>
-                <button class="px-3 py-1.5 rounded-lg hover:text-slate-900 transition-colors">Boletas</button>
+            <div class="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 self-start sm:self-auto" id="cpe_filter_tabs">
+                <button type="button" data-filter="todos" class="cpe-tab-btn px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 shadow-xs font-semibold text-slate-900 dark:text-white transition-all">Todos (<?php echo count($comprobantes); ?>)</button>
+                <button type="button" data-filter="factura" class="cpe-tab-btn px-3 py-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white transition-colors">Facturas</button>
+                <button type="button" data-filter="boleta" class="cpe-tab-btn px-3 py-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white transition-colors">Boletas</button>
+                <?php if ($pendientesCount > 0): ?>
+                <button type="button" data-filter="pendiente" class="cpe-tab-btn px-3 py-1.5 rounded-lg text-amber-700 dark:text-amber-400 hover:text-amber-900 transition-colors">Pendientes (<?php echo $pendientesCount; ?>)</button>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -80,7 +83,7 @@ include 'includes/sidebar.php';
 
                 <table class="w-full text-left border-collapse text-xs" id="tableDocs">
                     <thead>
-                        <tr class="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200/80 uppercase tracking-wider text-[11px]">
+                        <tr class="bg-slate-50/80 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200/80 dark:border-slate-700 uppercase tracking-wider text-[11px]">
                             <th class="px-6 py-3.5">Comprobante</th>
                             <th class="px-6 py-3.5">Cliente / Razón Social</th>
                             <th class="px-6 py-3.5">Fecha</th>
@@ -89,7 +92,7 @@ include 'includes/sidebar.php';
                             <th class="px-6 py-3.5 text-right">Acciones</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100 font-medium text-slate-700">
+                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-300">
                         <?php if (empty($comprobantes)): ?>
                             <tr>
                                 <td colspan="6" class="px-6 py-12 text-center">
@@ -107,14 +110,19 @@ include 'includes/sidebar.php';
                                 </td>
                             </tr>
                         <?php else: ?>
-                            <?php foreach ($comprobantes as $c): ?>
-                            <tr class="hover:bg-slate-50/80 transition-colors">
+                            <?php foreach ($comprobantes as $c):
+                                $isFacturaRow = stripos($c['tipo_comprobante'] ?? '', 'Factura') !== false;
+                                $isAceptadoRow = (($c['estado'] ?? '') === 'Aceptado' || ($c['sunat_cdr_estado'] ?? '') === 'Aceptado');
+                            ?>
+                            <tr class="cpe-row hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
+                                data-tipo="<?php echo $isFacturaRow ? 'factura' : 'boleta'; ?>"
+                                data-estado="<?php echo $isAceptadoRow ? 'aceptado' : 'pendiente'; ?>">
                                 <td class="px-6 py-4">
                                     <div class="flex items-center gap-2">
-                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold <?php echo ($c['tipo_comprobante'] == 'Factura') ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-100 text-slate-700 border border-slate-200'; ?>">
+                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold <?php echo $isFacturaRow ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'; ?>">
                                             <?php echo htmlspecialchars($c['tipo_comprobante']); ?>
                                         </span>
-                                        <span class="font-semibold text-slate-900 font-mono"><?php echo htmlspecialchars($c['serie'] . '-' . str_pad($c['correlativo'], 6, '0', STR_PAD_LEFT)); ?></span>
+                                        <span class="font-semibold text-slate-900 dark:text-white font-mono"><?php echo htmlspecialchars($c['serie'] . '-' . str_pad($c['correlativo'], 6, '0', STR_PAD_LEFT)); ?></span>
                                         <?php if (!empty($c['es_exportacion'])): ?>
                                             <span class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">EXP</span>
                                         <?php endif; ?>
@@ -167,9 +175,16 @@ include 'includes/sidebar.php';
                                         <!-- Ver Vista Pública -->
                                         <a href="<?php echo $linkComp; ?>" 
                                            target="_blank" 
-                                           class="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           class="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/15 rounded-lg transition-colors inline-flex items-center justify-center" 
                                            title="Ver vista pública">
                                             <i class="fa-solid fa-eye text-xs"></i>
+                                        </a>
+
+                                        <!-- Clonar / Duplicar Comprobante -->
+                                        <a href="factura_nueva.php?clonar=<?php echo (int)$c['id']; ?>" 
+                                           class="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 rounded-lg transition-colors inline-flex items-center justify-center" 
+                                           title="Clonar / Duplicar para emitir otro similar">
+                                            <i class="fa-solid fa-clone text-xs"></i>
                                         </a>
 
                                         <!-- Compartir Vista Pública -->
@@ -294,13 +309,37 @@ include 'includes/sidebar.php';
 </div>
 
 <script>
-// Filtro en tiempo real de comprobantes
-document.getElementById('searchComprobantes')?.addEventListener('input', function(e) {
-    const q = e.target.value.toLowerCase();
-    const rows = document.querySelectorAll('#tableDocs tbody tr');
+// Filtro combinado (Texto + Pestañas Todos / Facturas / Boletas / Pendientes)
+let currentCpeFilter = 'todos';
+
+function aplicarFiltrosCpe() {
+    const q = (document.getElementById('searchComprobantes')?.value || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#tableDocs tbody tr.cpe-row');
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(q) ? '' : 'none';
+        const tipo = row.dataset.tipo || '';
+        const estado = row.dataset.estado || '';
+
+        const matchTexto = !q || text.includes(q);
+        let matchTab = true;
+        if (currentCpeFilter === 'factura') matchTab = (tipo === 'factura');
+        else if (currentCpeFilter === 'boleta') matchTab = (tipo === 'boleta');
+        else if (currentCpeFilter === 'pendiente') matchTab = (estado === 'pendiente');
+
+        row.style.display = (matchTexto && matchTab) ? '' : 'none';
+    });
+}
+
+document.getElementById('searchComprobantes')?.addEventListener('input', aplicarFiltrosCpe);
+
+document.querySelectorAll('#cpe_filter_tabs .cpe-tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        currentCpeFilter = this.dataset.filter || 'todos';
+        document.querySelectorAll('#cpe_filter_tabs .cpe-tab-btn').forEach(b => {
+            b.classList.remove('bg-white', 'dark:bg-slate-900', 'shadow-xs', 'font-semibold', 'text-slate-900', 'dark:text-white');
+        });
+        this.classList.add('bg-white', 'dark:bg-slate-900', 'shadow-xs', 'font-semibold', 'text-slate-900', 'dark:text-white');
+        aplicarFiltrosCpe();
     });
 });
 
@@ -379,12 +418,18 @@ async function sincronizarPendientes() {
         const r = await fetch('api/cron_reintentar_sunat.php');
         const data = await r.json();
 
-        let msg = `Proceso completado:\n- Aceptados por SUNAT: ${data.aceptados}\n- Aún en contingencia: ${data.aun_pendientes}`;
-        if (data.rechazados > 0) msg += `\n- Rechazados: ${data.rechazados}`;
-        alert(msg);
-        location.reload();
+        let msg = `Aceptados: ${data.aceptados} | En contingencia: ${data.aun_pendientes}`;
+        if (data.rechazados > 0) msg += ` | Rechazados: ${data.rechazados}`;
+        if (window.showToast) {
+            window.showToast(msg, data.aceptados > 0 ? 'success' : 'info', 'Sincronización SUNAT');
+            setTimeout(() => location.reload(), 1400);
+        } else {
+            location.reload();
+        }
     } catch (e) {
-        alert('Error al intentar sincronizar: ' + e.message);
+        if (window.showToast) {
+            window.showToast('Error al intentar sincronizar: ' + e.message, 'error', 'Error de Red');
+        }
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = originalText;

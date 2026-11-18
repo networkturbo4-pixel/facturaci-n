@@ -355,3 +355,62 @@ if (!function_exists('obtenerResumenAlertasStock')) {
         ];
     }
 }
+
+if (!function_exists('validarStockDisponible')) {
+    /**
+     * Valida que las cantidades solicitadas para productos físicos no superen el stock disponible en inventario.
+     * Suma cantidades si un mismo producto aparece en múltiples líneas. Excluye servicios (ZZ o código SRV-).
+     *
+     * @param PDO   $conn
+     * @param array $lineas Lista de ['desc' => string, 'qty' => float]
+     * @return array ['ok' => bool, 'errores' => string[]]
+     */
+    function validarStockDisponible(PDO $conn, array $lineas): array {
+        ensureInventarioSchema($conn);
+        $errores = [];
+        $acumuladoPorProd = [];
+
+        try {
+            $stmt = $conn->prepare("SELECT id, codigo, descripcion, unidad_medida, stock FROM productos WHERE descripcion = ? OR codigo = ? LIMIT 1");
+            foreach ($lineas as $lin) {
+                $q = trim((string)($lin['desc'] ?? ''));
+                $qty = (float)($lin['qty'] ?? 0);
+                if ($q === '' || $qty <= 0) continue;
+
+                $stmt->execute([$q, $q]);
+                $prod = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$prod) continue;
+
+                $esServicio = (strtoupper($prod['unidad_medida'] ?? '') === 'ZZ') || str_starts_with(strtoupper($prod['codigo'] ?? ''), 'SRV');
+                if ($esServicio) continue;
+
+                $pid = (int)$prod['id'];
+                if (!isset($acumuladoPorProd[$pid])) {
+                    $acumuladoPorProd[$pid] = [
+                        'descripcion'   => $prod['descripcion'],
+                        'unidad_medida' => $prod['unidad_medida'] ?: 'NIU',
+                        'stock'         => (float)$prod['stock'],
+                        'solicitado'    => 0.0,
+                    ];
+                }
+                $acumuladoPorProd[$pid]['solicitado'] += $qty;
+            }
+
+            foreach ($acumuladoPorProd as $info) {
+                if ($info['solicitado'] > $info['stock'] + 0.00001) {
+                    $um = $info['unidad_medida'];
+                    $solFmt = rtrim(rtrim(number_format($info['solicitado'], 2, '.', ''), '0'), '.');
+                    $stkFmt = rtrim(rtrim(number_format($info['stock'], 2, '.', ''), '0'), '.');
+                    $errores[] = "Stock insuficiente para \"{$info['descripcion']}\": solicitaste {$solFmt} {$um}, pero solo tienes {$stkFmt} {$um} en inventario.";
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Error en validarStockDisponible: " . $e->getMessage());
+        }
+
+        return [
+            'ok'      => empty($errores),
+            'errores' => $errores,
+        ];
+    }
+}

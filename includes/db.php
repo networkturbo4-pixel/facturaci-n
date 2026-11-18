@@ -60,6 +60,22 @@ try {
     } else {
         error_log("FACTUSYS DB Connection Error: " . $e->getMessage());
         $currentScript = basename($_SERVER['PHP_SELF'] ?? '');
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+        $acceptHeader = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $isApiOrAjax = (strpos($requestUri, '/api/') !== false) || (strpos($acceptHeader, 'application/json') !== false) || (php_sapi_name() === 'cli');
+
+        if ($isApiOrAjax) {
+            if (php_sapi_name() !== 'cli' && !headers_sent()) {
+                http_response_code(503);
+                header('Content-Type: application/json; charset=utf-8');
+            }
+            echo json_encode([
+                'success' => false,
+                'message' => 'Base de datos no disponible temporalmente. Verifique que el servicio MySQL esté activo.'
+            ]);
+            exit;
+        }
+
         if ($currentScript !== 'install.php') {
             if (!headers_sent()) {
                 header("Location: install.php");
