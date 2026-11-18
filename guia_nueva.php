@@ -45,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $conn->exec("CREATE TABLE IF NOT EXISTS guias_remision (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    token_publico VARCHAR(64) NULL,
                     serie VARCHAR(10) NOT NULL DEFAULT 'T001',
                     correlativo INT NOT NULL,
                     fecha_emision DATE NOT NULL,
@@ -63,6 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+                try {
+                    $conn->exec("ALTER TABLE guias_remision ADD COLUMN IF NOT EXISTS token_publico VARCHAR(64) NULL AFTER id");
+                } catch (Exception $eCol) {}
+
                 $conn->exec("CREATE TABLE IF NOT EXISTS guia_remision_lineas (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     guia_id INT NOT NULL,
@@ -75,17 +80,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn->beginTransaction();
                 validarStockDisponible($conn, $itemsGuia);
 
-                $serie = getSystemConfig('serie_guia', 'T001') ?: 'T001';
-                $stMax = $conn->prepare("SELECT MAX(correlativo) FROM guias_remision WHERE serie = ? FOR UPDATE");
-                $stMax->execute([$serie]);
-                $corr = ((int)$stMax->fetchColumn()) + 1;
-                $numGuia = $serie . '-' . str_pad((string)$corr, 6, '0', STR_PAD_LEFT);
+                $editId = (int)($_POST['guia_id'] ?? 0);
+                if ($editId > 0) {
+                    $stEx = $conn->prepare("SELECT id, serie, correlativo, token_publico FROM guias_remision WHERE id = ? FOR UPDATE");
+                    $stEx->execute([$editId]);
+                    $ex = $stEx->fetch(PDO::FETCH_ASSOC);
+                    if (!$ex) {
+                        throw new Exception("Guía de remisión no encontrada para editar.");
+                    }
+                    $tok = !empty($ex['token_publico']) ? $ex['token_publico'] : bin2hex(random_bytes(16));
+                    $numGuia = $ex['serie'] . '-' . str_pad((string)$ex['correlativo'], 6, '0', STR_PAD_LEFT);
 
-                $stIns = $conn->prepare("INSERT INTO guias_remision
-                    (serie, correlativo, fecha_emision, motivo_traslado, peso_bruto, destinatario_doc, destinatario_razon, partida_direccion, partida_ubigeo, llegada_direccion, llegada_ubigeo, modalidad_transporte, conductor_doc, vehiculo_placa, estado)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Emitida')");
-                $stIns->execute([$serie, $corr, $fecha, $motivo, $peso, $destDoc, $destRazon, $partDir, $partUbg, $llegDir, $llegUbg, $modalidad, $conductor, $placa]);
-                $guiaId = (int)$conn->lastInsertId();
+                    $stUpd = $conn->prepare("UPDATE guias_remision SET
+                        token_publico = ?, fecha_emision = ?, motivo_traslado = ?, peso_bruto = ?,
+                        destinatario_doc = ?, destinatario_razon = ?,
+                        partida_direccion = ?, partida_ubigeo = ?,
+                        llegada_direccion = ?, llegada_ubigeo = ?,
+                        modalidad_transporte = ?, conductor_doc = ?, vehiculo_placa = ?
+                        WHERE id = ?");
+                    $stUpd->execute([$tok, $fecha, $motivo, $peso, $destDoc, $destRazon, $partDir, $partUbg, $llegDir, $llegUbg, $modalidad, $conductor, $placa, $editId]);
+
+                    $conn->prepare("DELETE FROM guia_remision_lineas WHERE guia_id = ?")->execute([$editId]);
+                    $guiaId = $editId;
+                    $flashMsg = "Guía de Remisión {$numGuia} actualizada correctamente.";
+                } else {
+                    $serie = getSystemConfig('serie_guia', 'T001') ?: 'T001';
+                    $stMax = $conn->prepare("SELECT MAX(correlativo) FROM guias_remision WHERE serie = ? FOR UPDATE");
+                    $stMax->execute([$serie]);
+                    $corr = ((int)$stMax->fetchColumn()) + 1;
+                    $numGuia = $serie . '-' . str_pad((string)$corr, 6, '0', STR_PAD_LEFT);
+                    $tok = bin2hex(random_bytes(16));
+
+                    $stIns = $conn->prepare("INSERT INTO guias_remision
+                        (token_publico, serie, correlativo, fecha_emision, motivo_traslado, peso_bruto, destinatario_doc, destinatario_razon, partida_direccion, partida_ubigeo, llegada_direccion, llegada_ubigeo, modalidad_transporte, conductor_doc, vehiculo_placa, estado)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Emitida')");
+                    $stIns->execute([$tok, $serie, $corr, $fecha, $motivo, $peso, $destDoc, $destRazon, $partDir, $partUbg, $llegDir, $llegUbg, $modalidad, $conductor, $placa]);
+                    $guiaId = (int)$conn->lastInsertId();
+                    $flashMsg = "Guía de Remisión {$numGuia} emitida y registrada correctamente.";
+                }
 
                 $stLin = $conn->prepare("INSERT INTO guia_remision_lineas (guia_id, cantidad, unidad, descripcion) VALUES (?, ?, ?, ?)");
                 foreach ($itemsGuia as $it) {
@@ -93,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $conn->commit();
-                $_SESSION['flash_guia'] = "Guía de Remisión {$numGuia} emitida y registrada correctamente.";
+                $_SESSION['flash_guia'] = $flashMsg;
                 header("Location: guias.php");
                 exit;
             } catch (Exception $e) {
@@ -102,6 +134,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+}
+
+// Cargar guía existente si viene ?editar=ID
+$guiaEdit = null;
+$guiaEditLineas = [];
+if (!empty($_GET['editar'])) {
+    $edId = (int)$_GET['editar'];
+    try {
+        $stG = $conn->prepare("SELECT * FROM guias_remision WHERE id = ? LIMIT 1");
+        $stG->execute([$edId]);
+        $guiaEdit = $stG->fetch(PDO::FETCH_ASSOC);
+        if ($guiaEdit) {
+            $stGL = $conn->prepare("SELECT * FROM guia_remision_lineas WHERE guia_id = ? ORDER BY id ASC");
+            $stGL->execute([$edId]);
+            $guiaEditLineas = $stGL->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Exception $e) {}
 }
 
 // Cargar catálogo de productos activos para autocompletado y selección rápida
@@ -130,7 +179,9 @@ include 'includes/header.php';
 
     <div class="flex-1 overflow-auto p-4 sm:p-6 lg:p-8">
         <div class="max-w-5xl mx-auto">
-            <h3 class="text-2xl font-bold text-gray-800 mb-6">Emitir Guía de Remisión Electrónica</h3>
+            <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                <?php echo $guiaEdit ? ('Editar Guía de Remisión ' . htmlspecialchars($guiaEdit['serie'] . '-' . str_pad((string)$guiaEdit['correlativo'], 6, '0', STR_PAD_LEFT))) : 'Emitir Guía de Remisión Electrónica'; ?>
+            </h3>
 
             <?php if ($error_msg): ?>
                 <div class="mb-5 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-bold flex items-center gap-2.5">
@@ -141,6 +192,7 @@ include 'includes/header.php';
 
             <form method="POST" action="" id="formGuia">
                 <?php echo csrf_field(); ?>
+                <input type="hidden" name="guia_id" value="<?php echo (int)($guiaEdit['id'] ?? 0); ?>">
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden p-8">
                 
                 <h4 class="text-sm font-semibold text-primary uppercase tracking-wider mb-4 border-b pb-2">1. Datos Generales</h4>
@@ -761,6 +813,50 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.showToast) window.showToast('No puedes emitir una guía con cantidades superiores al stock disponible.', 'error', 'Stock Insuficiente');
         }
     });
+
+    <?php if ($guiaEdit): ?>
+    // Precargar datos de edición
+    (function prefillGuiaEdit() {
+        const g = <?php echo json_encode($guiaEdit, JSON_UNESCAPED_UNICODE); ?>;
+        const lines = <?php echo json_encode($guiaEditLineas, JSON_UNESCAPED_UNICODE); ?>;
+        const form = document.getElementById('formGuia');
+        if (!form) return;
+        const setVal = (sel, val) => { const el = form.querySelector(sel); if (el && val !== null && val !== undefined) el.value = val; };
+        setVal('[name="motivo_traslado"]', g.motivo_traslado);
+        setVal('[name="fecha_emision"]', g.fecha_emision);
+        setVal('[name="peso_bruto"]', g.peso_bruto);
+        setVal('[name="destinatario_doc"]', g.destinatario_doc);
+        setVal('[name="destinatario_razon"]', g.destinatario_razon);
+        if (g.destinatario_razon) document.getElementById('datos_cliente_encontrado')?.classList.remove('hidden');
+        setVal('[name="partida_direccion"]', g.partida_direccion);
+        setVal('[name="partida_ubigeo"]', g.partida_ubigeo);
+        setVal('[name="llegada_direccion"]', g.llegada_direccion);
+        setVal('[name="llegada_ubigeo"]', g.llegada_ubigeo);
+        setVal('[name="modalidad_transporte"]', g.modalidad_transporte);
+        setVal('[name="conductor_doc"]', g.conductor_doc);
+        setVal('[name="vehiculo_placa"]', g.vehiculo_placa);
+
+        if (Array.isArray(lines) && lines.length > 0 && tbody) {
+            const firstRow = tbody.querySelector('.item-row');
+            for (let i = 1; i < lines.length; i++) btnAddRow.click();
+            const rows = tbody.querySelectorAll('.item-row');
+            lines.forEach((ln, idx) => {
+                const r = rows[idx];
+                if (!r) return;
+                const qEl = r.querySelector('.item-qty');
+                const uEl = r.querySelector('.item-unit');
+                const dEl = r.querySelector('.item-desc');
+                if (qEl) qEl.value = parseFloat(ln.cantidad);
+                if (uEl && ln.unidad) {
+                    if (![...uEl.options].some(o => o.value === ln.unidad)) uEl.add(new Option(ln.unidad, ln.unidad));
+                    uEl.value = ln.unidad;
+                }
+                if (dEl) dEl.value = ln.descripcion;
+            });
+            validarStockGuia();
+        }
+    })();
+    <?php endif; ?>
 });
 </script>
 
